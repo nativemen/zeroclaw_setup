@@ -1,0 +1,139 @@
+# ZeroClaw Configuration Template
+# For English Resume Output
+
+# =============================================================================
+# API Configuration
+# =============================================================================
+# REQUIRED: Your LLM provider API key
+# SECURITY: Keep this empty and use environment variables instead
+api_key = ""
+
+# Default provider (deepseek, openrouter, openai, anthropic, ollama)
+default_provider = "deepseek"
+
+# Default model (DeepSeek models)
+# Available: deepseek-chat, deepseek-coder, deepseek-reasoner
+default_model = "deepseek-chat"
+
+# Temperature for responses (0.0 - 1.0)
+default_temperature = 0.7
+
+# =============================================================================
+# Gateway Configuration
+# =============================================================================
+[gateway]
+port = 42617
+host = "0.0.0.0"
+require_pairing = true
+allow_public_bind = false
+
+# =============================================================================
+# Autonomy & Security
+# =============================================================================
+[autonomy]
+# Autonomy level: readonly, supervised, full (controls AI agent capabilities)
+level = "readonly"
+
+# Maximum actions per hour (rate limiting for security)
+max_actions_per_hour = 100
+
+# Maximum cost per day in cents (100 = $1.00)
+max_cost_per_day_cents = 1000
+
+# Workspace-only mode prevents access outside the designated workspace
+workspace_only = true
+
+# Allowed commands (restricted for security)
+allowed_commands = ["git", "ls", "cat", "grep", "echo", "pwd", "head", "tail"]
+
+# Forbidden paths for security
+forbidden_paths = ["/etc", "/root", "/proc", "/sys", "~/.ssh", "~/.gnupg", "~/.aws"]
+
+# =============================================================================
+# Memory Configuration
+# =============================================================================
+[memory]
+# Use sqlite for local storage
+backend = "sqlite"
+auto_save = true
+
+# Disable embeddings for privacy (no data sent to external services)
+embedding_provider = "none"
+
+# =============================================================================
+# Runtime Configuration
+# =============================================================================
+[runtime]
+# Use native runtime for better security
+kind = "native"
+
+# =============================================================================
+# Secrets Encryption
+# =============================================================================
+[secrets]
+# Enable encryption for API keys and secrets
+encrypt = true
+
+# =============================================================================
+# Security & Privacy Settings (NEW)
+# =============================================================================
+[security]
+# Enable request rate limiting
+rate_limit_enabled = true
+rate_limit_requests = 100
+rate_limit_window_seconds = 60
+
+# Enable input sanitization
+sanitize_inputs = true
+
+# Enable audit logging
+audit_logging = true
+
+# Maximum request size in bytes (1MB)
+max_request_size = 1048576
+
+# Block suspicious patterns in prompts
+block_patterns = ["<script", "eval(", "exec(", "system(", "subprocess"]
+
+# =============================================================================
+# Identity Configuration (For Resume Generation)
+# =============================================================================
+[identity]
+# Use OpenClaw format for identity management
+format = "openclaw"
+
+# =============================================================================
+# Heartbeat (Optional)
+# =============================================================================
+[heartbeat]
+enabled = false
+interval_minutes = 60
+
+# =============================================================================
+# Tunnel (Optional - for remote access)
+# =============================================================================
+[tunnel]
+# Tailscale configuration for private network access
+# IMPORTANT: Set to "tailscale" when using Tailscale VPN
+# ZeroClaw will be accessible via Tailscale private IP (100.x.x.x)
+provider = "tailscale"
+
+# Tailscale-specific settings
+[tunnel.tailscale]
+# Hostname in Tailscale network (for identification)
+hostname = "zeroclaw-wsl"
+
+# Socket path for Tailscale daemon communication
+socket_path = "/var/run/tailscale/tailscaled.sock"
+
+# Advertise exit node (optional, for routing all traffic through ZeroClaw)
+advertise_exit_node = false
+
+# Accept DNS settings from Tailscale
+accept_dns = true
+
+# Accept routes from Tailscale
+accept_routes = true
+
+# Operator user (controls the node)
+operator = "root"

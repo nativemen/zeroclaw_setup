@@ -1,0 +1,161 @@
+# =============================================================================
+# ZeroClaw Docker Compose Configuration with Tailscale
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Init Container - 初始化配置文件
+  # ---------------------------------------------------------------------------
+  init-config:
+    image: alpine:latest
+    container_name: zeroclaw-init
+    restart: "no"
+
+    volumes:
+      - zeroclaw-config:/zeroclaw-data/.zeroclaw
+      - ../build/docker/zeroclaw/config/config.toml:/tmp/config.toml:ro
+
+    command: >
+      sh -c "
+        cp /tmp/config.toml /zeroclaw-data/.zeroclaw/config.toml &&
+        chmod 600 /zeroclaw-data/.zeroclaw/config.toml &&
+        chown -R 65534:65534 /zeroclaw-data/.zeroclaw
+      "
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Tailscale Sidecar Container
+  # - Provides VPN access via Tailscale network
+  # - ZeroClaw only accessible via Tailscale private IP
+  # ---------------------------------------------------------------------------
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    restart: unless-stopped
+
+    # Load environment variables from build/docker/tailscale/env/.env.tailscale
+    env_file:
+      - ../build/docker/tailscale/env/.env.tailscale
+
+    environment:
+      - TS_AUTH_ONCE=true
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SOCKET=/var/run/tailscale/tailscaled.sock
+      - TS_USERSPACE=false
+      - TS_NETSTACK=false
+      - TS_SSH_ENABLED=true
+      - TS_EXTRA_ARGS=--operator=65534
+
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - tailscale-sock:/var/run/tailscale
+
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    cap_drop:
+      - ALL
+
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_MODULE
+
+    security_opt:
+      - apparmor:unconfined
+      - no-new-privileges:true
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+    healthcheck:
+      test: ["CMD", "pgrep", "tailscaled"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # ZeroClaw Main Application
+  # - Protected by Tailscale VPN
+  # ---------------------------------------------------------------------------
+  zeroclaw:
+    image: ghcr.io/zeroclaw-labs/zeroclaw:latest
+    container_name: zeroclaw
+    restart: unless-stopped
+
+    # 共享 Tailscale 的网络命名空间
+    network_mode: service:tailscale
+
+    # Load environment variables from build/docker/zeroclaw/env/.env.zeroclaw
+    env_file:
+      - ../build/docker/zeroclaw/env/.env.zeroclaw
+
+    environment:
+      - TS_SOCKET=/var/run/tailscale/tailscaled.sock
+
+    volumes:
+      - zeroclaw-config:/zeroclaw-data/.zeroclaw:rw
+      - zeroclaw-data:/zeroclaw-data
+      - zeroclaw-logs:/zeroclaw-data/logs
+      - tailscale-sock:/var/run/tailscale
+
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "zeroclaw", "status"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # 降权所有能力
+    cap_drop:
+      - ALL
+
+    # 日志
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # 重启策略
+    stop_grace_period: 30s
+
+    # 依赖
+    depends_on:
+      init-config:
+        condition: service_completed_successfully
+      tailscale:
+        condition: service_healthy
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  zeroclaw-config:
+  zeroclaw-data:
+  zeroclaw-logs:
+  tailscale-state:
+  tailscale-sock:
