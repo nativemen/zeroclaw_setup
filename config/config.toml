@@ -8,7 +8,7 @@
 # SECURITY: Keep this empty and use environment variables instead
 api_key = ""
 
-# Default provider (deepseek, openrouter, openai, anthropic, ollama)
+# Default provider (deepseek, ollama, openai, openrouter, anthropic, google)
 default_provider = "deepseek"
 
 # Default model (DeepSeek models)
