@@ -783,24 +783,16 @@ EOF
 
 do_clean() {
     print_header "Cleaning Build Artifacts"
+
+    # First clean up Docker containers and volumes
+    print_info "Cleaning up Docker containers and volumes..."
+    cleanup_old || return 1
+
     print_info "Cleaning build directory..."
 
     clean_backup_files
 
     validate_directory "$BUILD_DIR" || return 1
-
-    # Delete temporary files but keep configuration files
-    for subdir in generated runtime temp tools docker; do
-        if [[ -d "$BUILD_DIR/$subdir" ]]; then
-            rm -rf "$BUILD_DIR/$subdir"/*
-            print_info "  Cleaned $BUILD_DIR/$subdir/"
-        else
-            validate_directory "$BUILD_DIR/$subdir" || return 1
-        fi
-    done
-
-    # Ensure logs directory exists for Docker mounting
-    validate_directory "$BUILD_DIR/logs" || return 1
 
     print_success "Build directory cleaned (configuration files preserved)"
 }
@@ -808,7 +800,9 @@ do_clean() {
 do_distclean() {
     print_header "Deep Cleaning All Generated Files"
 
-    clean_backup_files
+    # First clean up Docker containers and volumes
+    print_info "Cleaning up Docker containers and volumes..."
+    cleanup_old || return 1
 
     print_info "This will remove the entire build directory:"
     echo "  - Build artifacts"
@@ -861,7 +855,7 @@ pipeline_build_and_run() {
 
 setup_directories() {
     print_info "Setting up build directories..."
-    for subdir in generated runtime reference backups templates logs; do
+    for subdir in docker; do
         validate_directory "$BUILD_DIR/$subdir" || return 1
     done
     # Also create the zeroclaw/config subdirectory for config mounting
