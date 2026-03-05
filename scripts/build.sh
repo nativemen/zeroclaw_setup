@@ -296,8 +296,8 @@ read_env_value() {
 setup_environment() {
     local tailscale_env_file="$BUILD_DIR/docker/tailscale/env/.env.tailscale"
     local zeroclaw_env_file="$BUILD_DIR/docker/zeroclaw/env/.env.zeroclaw"
-    local tailscale_env_example="$DOCKER_DIR/.env.tailscale.example"
-    local zeroclaw_env_example="$DOCKER_DIR/.env.zeroclaw.example"
+    local tailscale_env_example="$DOCKER_DIR/tailscale/.env.tailscale.example"
+    local zeroclaw_env_example="$DOCKER_DIR/zeroclaw/.env.zeroclaw.example"
     local provider model api_key host_port tailscale_auth_key
 
     # Ensure docker subdirectory exists
@@ -870,7 +870,7 @@ setup_directories() {
 setup_config() {
     print_info "Setting up ZeroClaw configuration..."
 
-    local src_config="$CONFIG_DIR/config.toml"
+    local src_config="$DOCKER_DIR/zeroclaw/config.toml"
     local dest_config="$BUILD_DIR/docker/zeroclaw/config/config.toml"
 
     if [[ ! -f "$src_config" ]]; then
