@@ -15,6 +15,7 @@ services:
       - zeroclaw-data:/zeroclaw-data:rw
       - ../build/docker/zeroclaw/config/config.toml:/tmp/config.toml:ro
       - ../build/docker/zeroclaw/workspace/SOUL.md:/tmp/SOUL.md:ro
+      - ../build/docker/zeroclaw/workspace/AGENTS.md:/tmp/AGENTS.md:ro
 
     command: >
       sh -c "
@@ -24,6 +25,8 @@ services:
         mkdir -p /zeroclaw-data/workspace &&
         cp /tmp/SOUL.md /zeroclaw-data/workspace/SOUL.md &&
         chmod 644 /zeroclaw-data/workspace/SOUL.md &&
+        cp /tmp/AGENTS.md /zeroclaw-data/workspace/AGENTS.md &&
+        chmod 644 /zeroclaw-data/workspace/AGENTS.md &&
         chown -R 65534:65534 /zeroclaw-data
       "
 

@@ -960,16 +960,16 @@ setup_config() {
         return 1
     fi
 
-    # Copy SOUL.md to workspace
-    local src_soul="$DOCKER_DIR/zeroclaw/SOUL.md"
+    # Copy workspace documents (*.md)
     local dest_workspace="$BUILD_DIR/docker/zeroclaw/workspace"
-    if [[ -f $src_soul ]]; then
-        mkdir -p "$dest_workspace"
-        cp --preserve "$src_soul" "$dest_workspace/SOUL.md"
-        print_success "SOUL.md copied to $dest_workspace/SOUL.md"
-    else
-        print_warning "SOUL.md source not found: $src_soul"
-    fi
+    mkdir -p "$dest_workspace"
+    for md_file in "$DOCKER_DIR/zeroclaw"/*.md; do
+        if [[ -f "$md_file" ]]; then
+            local filename=$(basename "$md_file")
+            cp --preserve "$md_file" "$dest_workspace/$filename"
+            print_success "$filename copied to $dest_workspace/$filename"
+        fi
+    done
 }
 
 do_logs() {
