@@ -16,7 +16,7 @@ DOCKER_DIR="$PROJECT_ROOT/docker"
 CONFIG_DIR="$PROJECT_ROOT/config"
 
 # Configurable defaults
-DEFAULT_IMAGE="ghcr.io/zeroclaw-labs/zeroclaw:latest"
+DEFAULT_IMAGE="ghcr.io/zeroclaw-labs/zeroclaw:v0.1.7"
 DEFAULT_GATEWAY_PORT="42617"
 DEFAULT_PROVIDER="deepseek"
 DEFAULT_MODEL="deepseek-chat"

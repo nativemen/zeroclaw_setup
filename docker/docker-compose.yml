@@ -87,7 +87,7 @@ services:
   # - Protected by Tailscale VPN
   # ---------------------------------------------------------------------------
   zeroclaw:
-    image: ghcr.io/zeroclaw-labs/zeroclaw:latest
+    image: ghcr.io/zeroclaw-labs/zeroclaw:v0.1.7
     container_name: zeroclaw
     restart: unless-stopped
 
