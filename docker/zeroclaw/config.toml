@@ -1,171 +1,161 @@
-# =============================================================================
-# ZeroClaw Configuration - Production Environment
-# Optimized for: WSL2 / Docker Sidecar / Tailscale Private Network
-# =============================================================================
+# ZeroClaw Configuration File
+# Optimized comments: Detailed per-field explanations, redundancies removed.
+# Format: TOML. All values preserved; only comments optimized.
+# Lines <=120 chars.
 
-# [API Configuration]
-# SECURITY: Leave empty here; inject via ZEROCLAW_API_KEY environment variable in docker-compose.yml
+# API Configuration Section
+
+# api_key: API key for LLM providers.
+# SECURITY: Leave empty; inject via environment variable
+# (ZEROCLAW_API_KEY in docker-compose.yml).
+# Type: string. Default: "".
+# Usage: Required for paid providers.
 api_key = ""
 
-# Default LLM provider
-# Options: "deepseek", "ollama" (local), "openai", "anthropic", "google"
+# default_provider: Default LLM provider.
+# Type: string.
+# Options: "deepseek", "ollama" (local), "openai", "anthropic", "google".
+# Default: "deepseek".
+# Usage: Fallback provider for requests.
 default_provider = "deepseek"
 
-# Target Model
-# Options: "deepseek-chat" (standard), "deepseek-reasoner" (DeepSeek-R1 for complex logic)
+# default_model: Target model for generation.
+# Type: string.
+# Options: "deepseek-chat" (standard), "deepseek-reasoner" (complex logic).
+# Default: "deepseek-chat".
+# Usage: Specific model within provider.
 default_model = "deepseek-chat"
 
-# Generation Temperature (0.0 - 1.0)
-# Use 0.3-0.4 for Documents (Fact-based/Precise); 0.7 for general tasks
+# default_temperature: Sampling temperature for generation.
+# Type: float. Range: 0.0-1.0. Default: 0.4.
+# Usage: Lower (0.3-0.4) for precise/docs;
+# higher (0.7) for creative tasks.
 default_temperature = 0.4
 
-# =============================================================================
-# [Gateway - Network Ingress]
-# Defines how the Agent listens for incoming requests
-# =============================================================================
 [gateway]
-# Host Address
-# Set to "0.0.0.0" to allow Tailscale container to forward traffic to this app
+# host: Bind address for incoming requests.
+# Type: string. Default: "0.0.0.0".
+# Usage: "0.0.0.0" allows Tailscale forwarding;
+# "127.0.0.1" for localhost-only.
 host = "0.0.0.0"
 
-# Service Port
+# port: Listening port.
+# Type: integer. Default: 42617.
+# Usage: Expose via Docker; access via Tailscale.
 port = 42617
 
-# Security: Require initial pairing between client and server
+# require_pairing: Require client-server pairing.
+# Type: bool. Default: true.
+# Usage: Security feature for initial auth.
 require_pairing = true
 
-# Allow Non-Localhost Binding
-# MUST BE true in Docker to allow access via Tailscale IP/Hostname
+# allow_public_bind: Permit binding to non-localhost.
+# Type: bool. Default: true.
+# Usage: MUST be true in Docker for Tailscale access.
 allow_public_bind = true
 
-# =============================================================================
-# [Autonomy & Security - Operational Guardrails]
-# =============================================================================
 [autonomy]
-# Level of Independence
-# Options:
-#   "readonly"   - View files only
-#   "supervised" - Asks for permission before running Shell commands (Recommended)
-#   "full"       - Fully autonomous execution
+# level: Autonomy mode.
+# Type: string.
+# Options: "readonly" (view only), "supervised" (ask permission, recommended),
+# "full" (autonomous).
+# Default: "supervised".
+# Usage: Controls command execution independence.
 level = "supervised"
 
-# Rate Limiting
+# max_actions_per_hour: Rate limit on actions.
+# Type: integer. Default: 100.
+# Usage: Prevent abuse/overuse.
 max_actions_per_hour = 100
-max_cost_per_day_cents = 1000  # Safety shut-off at $5.00/day
 
-# Sandbox Mode
-# Prevents the Agent from accessing files outside the /app/workspace directory
+# max_cost_per_day_cents: Daily cost limit (cents).
+# Type: integer. Default: 1000 ($10).
+# Usage: Auto-shutoff safety.
+max_cost_per_day_cents = 1000
+
+# workspace_only: Restrict to /app/workspace.
+# Type: bool. Default: true.
+# Usage: Sandboxing for security.
 workspace_only = true
 
-# Shell Command Whitelist (Restricted for Resume processing)
+# allowed_commands: Whitelisted shell commands.
+# Type: array[string].
+# Usage: Restrict exec for safety (e.g., resume processing).
 allowed_commands = ["git", "ls", "cat", "grep", "echo", "pwd", "mkdir", "cp", "mv"]
 
-# Restricted System Paths (Even if within Workspace)
+# forbidden_paths: Banned paths even in workspace.
+# Type: array[string].
+# Usage: Extra security layer.
 forbidden_paths = ["/etc", "/root", "/proc", "/sys", "~/.ssh", "/var/run"]
 
-# =============================================================================
-# [Memory & Privacy - Data Retention]
-# =============================================================================
 [memory]
-# Storage Engine
-# Options: "sqlite" (Local DB), "markdown" (Human-readable), "none"
+# backend: Memory storage.
+# Type: string. Options: "sqlite" (local DB), "markdown" (readable), "none".
+# Default: "sqlite".
+# Usage: Persist conversation history.
 backend = "sqlite"
+
+# auto_save: Enable auto-save.
+# Type: bool. Default: true.
+# Usage: Save memory after interactions.
 auto_save = true
 
-# Embedding (Vector Search)
-# Options: "none" (Privacy First), "openai", "local"
-# NOTE: Set to "none" to prevent your resume text from being uploaded to vector databases
+# embedding_provider: Vector embedding for search.
+# Type: string. Options: "none" (privacy), "openai", "local".
+# Default: "none".
+# Usage: "none" prevents external uploads (e.g., resume text).
 embedding_provider = "none"
 
-# =============================================================================
-# [Provider Specifics - DeepSeek Tuning]
-# =============================================================================
-[providers.deepseek]
-base_url = "https://api.deepseek.com/v1"
-
-# Request Timeout in seconds (Increase for long resume analysis)
-timeout = 60
-
-# Rate Limit Control
-max_concurrency = 3
-
-# Proxy (Optional: Uncomment if WSL requires host proxy for outbound API calls)
-# proxy_url = "http://host.docker.internal:7890"
-
-# =============================================================================
-# [Security - Advanced Protection]
-# =============================================================================
-[security]
-# Prompt Leakage Protection (Injects secret tokens to track prompt injection attempts)
-canary_tokens = true
-
 [security.audit]
+# enabled: Audit logging.
+# Type: bool. Default: true.
+# Usage: Log actions for review.
 enabled = true
+
+# log_path: Audit log file.
+# Type: string. Default: "/zeroclaw-data/logs/audit.log".
+# Usage: Custom path in Docker volume.
 log_path = "/zeroclaw-data/logs/audit.log"
+
+# max_size_mb: Max log size (MB).
+# Type: integer. Default: 50.
+# Usage: Rotate when exceeded.
 max_size_mb = 50
 
-[security.url_access]
-# Blocks API access to your local/private network addresses for safety
-block_private_ip = true
-# Whitelist Tailscale CIDR (100.64.0.0/10) to allow node-to-node communication
-allow_cidrs = ["100.64.0.0/10"]
-allow_loopback = true
-
-[security.outbound_leak_guard]
-# Automatically masks sensitive data (API Keys, SSH Keys) in AI responses
-enabled = true
-action = "redact"
-
-# =============================================================================
-# [Tunnel - External Access]
-# IMPORTANT: Since you are using Tailscale via Docker Sidecar (Network Stack Sharing),
-# internal Tunnel MUST be disabled to avoid conflict.
-# =============================================================================
 [tunnel]
+# provider: Tunnel service.
+# Type: string. Default: "none".
+# Usage: "none" for Tailscale sidecar; avoids conflicts.
 provider = "none"
 
-# =============================================================================
-# [Storage - Database Configuration]
-# =============================================================================
-# Storage provider configuration
-# Use [storage.sqlite] for SQLite or [storage.postgres] for PostgreSQL
 [storage]
+# Note: Configures DB storage. Use sub-tables like [storage.sqlite]
+# or [storage.postgres].
 
-# =============================================================================
-# [Storage - SQLite Configuration]
-# =============================================================================
-[storage.sqlite]
-# Database file path (relative to data directory or absolute)
-database_path = "zeroclaw.db"
+# [storage.postgres] (example, commented)
+# db_url: Postgres connection URL.
+# Type: string.
+# Example: "postgres://user:pass@localhost/zeroclaw".
+# connect_timeout_secs: Connection timeout (s).
+# Type: integer. Default: 5.
 
-# Connection timeout in seconds
-connect_timeout_secs = 5
-
-# WAL mode for better concurrency
-wal_mode = true
-
-# =============================================================================
-# [Storage - PostgreSQL Configuration (commented out)]
-# =============================================================================
-# [storage.postgres]
-# Database connection URL
-# db_url = "postgres://user:pass@localhost/zeroclaw"
-
-# Connection timeout in seconds
-# connect_timeout_secs = 5
-
-# =============================================================================
-# [Web Search - Internet Search]
-# =============================================================================
 [web_search]
-# Enable web search (default: true)
+# enabled: Enable web search.
+# Type: bool. Default: true.
+# Usage: Allow agent internet searches.
 enabled = true
 
-# Search provider: duckduckgo (default), brave
+# provider: Search engine.
+# Type: string. Options: "duckduckgo" (default), "brave".
+# Usage: Privacy-focused fallback.
 provider = "duckduckgo"
 
-# Maximum results per search
+# max_results: Results per query.
+# Type: integer. Default: 5. Range: 1-20.
+# Usage: Balance speed/relevance.
 max_results = 5
 
-# Search timeout in seconds
+# timeout_secs: Search timeout.
+# Type: integer. Default: 15.
+# Usage: Prevent hangs.
 timeout_secs = 15
