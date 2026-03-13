@@ -1,139 +1,171 @@
-# ZeroClaw Configuration Template
-# For English Resume Output
+# =============================================================================
+# ZeroClaw Configuration - Production Environment
+# Optimized for: WSL2 / Docker Sidecar / Tailscale Private Network
+# =============================================================================
 
-# =============================================================================
-# API Configuration
-# =============================================================================
-# REQUIRED: Your LLM provider API key
-# SECURITY: Keep this empty and use environment variables instead
+# [API Configuration]
+# SECURITY: Leave empty here; inject via ZEROCLAW_API_KEY environment variable in docker-compose.yml
 api_key = ""
 
-# Default provider (deepseek, ollama, openai, openrouter, anthropic, google)
+# Default LLM provider
+# Options: "deepseek", "ollama" (local), "openai", "anthropic", "google"
 default_provider = "deepseek"
 
-# Default model (DeepSeek models)
-# Available: deepseek-chat, deepseek-coder, deepseek-reasoner
+# Target Model
+# Options: "deepseek-chat" (standard), "deepseek-reasoner" (DeepSeek-R1 for complex logic)
 default_model = "deepseek-chat"
 
-# Temperature for responses (0.0 - 1.0)
-default_temperature = 0.7
+# Generation Temperature (0.0 - 1.0)
+# Use 0.3-0.4 for Documents (Fact-based/Precise); 0.7 for general tasks
+default_temperature = 0.4
 
 # =============================================================================
-# Gateway Configuration
+# [Gateway - Network Ingress]
+# Defines how the Agent listens for incoming requests
 # =============================================================================
 [gateway]
-port = 42617
+# Host Address
+# Set to "0.0.0.0" to allow Tailscale container to forward traffic to this app
 host = "0.0.0.0"
+
+# Service Port
+port = 42617
+
+# Security: Require initial pairing between client and server
 require_pairing = true
-allow_public_bind = false
+
+# Allow Non-Localhost Binding
+# MUST BE true in Docker to allow access via Tailscale IP/Hostname
+allow_public_bind = true
 
 # =============================================================================
-# Autonomy & Security
+# [Autonomy & Security - Operational Guardrails]
 # =============================================================================
 [autonomy]
-# Autonomy level: readonly, supervised, full (controls AI agent capabilities)
-level = "readonly"
+# Level of Independence
+# Options:
+#   "readonly"   - View files only
+#   "supervised" - Asks for permission before running Shell commands (Recommended)
+#   "full"       - Fully autonomous execution
+level = "supervised"
 
-# Maximum actions per hour (rate limiting for security)
+# Rate Limiting
 max_actions_per_hour = 100
+max_cost_per_day_cents = 1000  # Safety shut-off at $5.00/day
 
-# Maximum cost per day in cents (100 = $1.00)
-max_cost_per_day_cents = 1000
-
-# Workspace-only mode prevents access outside the designated workspace
+# Sandbox Mode
+# Prevents the Agent from accessing files outside the /app/workspace directory
 workspace_only = true
 
-# Allowed commands (restricted for security)
-allowed_commands = ["git", "ls", "cat", "grep", "echo", "pwd", "head", "tail"]
+# Shell Command Whitelist (Restricted for Resume processing)
+allowed_commands = ["git", "ls", "cat", "grep", "echo", "pwd", "mkdir", "cp", "mv"]
 
-# Forbidden paths for security
-forbidden_paths = ["/etc", "/root", "/proc", "/sys", "~/.ssh", "~/.gnupg", "~/.aws"]
+# Restricted System Paths (Even if within Workspace)
+forbidden_paths = ["/etc", "/root", "/proc", "/sys", "~/.ssh", "/var/run"]
 
 # =============================================================================
-# Memory Configuration
+# [Memory & Privacy - Data Retention]
 # =============================================================================
 [memory]
-# Use sqlite for local storage
+# Storage Engine
+# Options: "sqlite" (Local DB), "markdown" (Human-readable), "none"
 backend = "sqlite"
 auto_save = true
 
-# Disable embeddings for privacy (no data sent to external services)
+# Embedding (Vector Search)
+# Options: "none" (Privacy First), "openai", "local"
+# NOTE: Set to "none" to prevent your resume text from being uploaded to vector databases
 embedding_provider = "none"
 
 # =============================================================================
-# Runtime Configuration
+# [Provider Specifics - DeepSeek Tuning]
 # =============================================================================
-[runtime]
-# Use native runtime for better security
-kind = "native"
+[providers.deepseek]
+base_url = "https://api.deepseek.com/v1"
+
+# Request Timeout in seconds (Increase for long resume analysis)
+timeout = 60
+
+# Rate Limit Control
+max_concurrency = 3
+
+# Proxy (Optional: Uncomment if WSL requires host proxy for outbound API calls)
+# proxy_url = "http://host.docker.internal:7890"
 
 # =============================================================================
-# Secrets Encryption
-# =============================================================================
-[secrets]
-# Enable encryption for API keys and secrets
-encrypt = true
-
-# =============================================================================
-# Security & Privacy Settings (NEW)
+# [Security - Advanced Protection]
 # =============================================================================
 [security]
-# Enable request rate limiting
-rate_limit_enabled = true
-rate_limit_requests = 100
-rate_limit_window_seconds = 60
+# Prompt Leakage Protection (Injects secret tokens to track prompt injection attempts)
+canary_tokens = true
 
-# Enable input sanitization
-sanitize_inputs = true
+[security.audit]
+enabled = true
+log_path = "/zeroclaw-data/logs/audit.log"
+max_size_mb = 50
 
-# Enable audit logging
-audit_logging = true
+[security.url_access]
+# Blocks API access to your local/private network addresses for safety
+block_private_ip = true
+# Whitelist Tailscale CIDR (100.64.0.0/10) to allow node-to-node communication
+allow_cidrs = ["100.64.0.0/10"]
+allow_loopback = true
 
-# Maximum request size in bytes (1MB)
-max_request_size = 1048576
-
-# Block suspicious patterns in prompts
-block_patterns = ["<script", "eval(", "exec(", "system(", "subprocess"]
-
-# =============================================================================
-# Identity Configuration (For Resume Generation)
-# =============================================================================
-[identity]
-# Use OpenClaw format for identity management
-format = "openclaw"
+[security.outbound_leak_guard]
+# Automatically masks sensitive data (API Keys, SSH Keys) in AI responses
+enabled = true
+action = "redact"
 
 # =============================================================================
-# Heartbeat (Optional)
-# =============================================================================
-[heartbeat]
-enabled = false
-interval_minutes = 60
-
-# =============================================================================
-# Tunnel (Optional - for remote access)
+# [Tunnel - External Access]
+# IMPORTANT: Since you are using Tailscale via Docker Sidecar (Network Stack Sharing),
+# internal Tunnel MUST be disabled to avoid conflict.
 # =============================================================================
 [tunnel]
-# Tailscale configuration for private network access
-# IMPORTANT: Set to "tailscale" when using Tailscale VPN
-# ZeroClaw will be accessible via Tailscale private IP (100.x.x.x)
-provider = "tailscale"
+provider = "none"
 
-# Tailscale-specific settings
-[tunnel.tailscale]
-# Hostname in Tailscale network (for identification)
-hostname = "zeroclaw-wsl"
+# =============================================================================
+# [Storage - Database Configuration]
+# =============================================================================
+# Storage provider configuration
+# Use [storage.sqlite] for SQLite or [storage.postgres] for PostgreSQL
+[storage]
 
-# Socket path for Tailscale daemon communication
-socket_path = "/var/run/tailscale/tailscaled.sock"
+# =============================================================================
+# [Storage - SQLite Configuration]
+# =============================================================================
+[storage.sqlite]
+# Database file path (relative to data directory or absolute)
+database_path = "zeroclaw.db"
 
-# Advertise exit node (optional, for routing all traffic through ZeroClaw)
-advertise_exit_node = false
+# Connection timeout in seconds
+connect_timeout_secs = 5
 
-# Accept DNS settings from Tailscale
-accept_dns = true
+# WAL mode for better concurrency
+wal_mode = true
 
-# Accept routes from Tailscale
-accept_routes = true
+# =============================================================================
+# [Storage - PostgreSQL Configuration (commented out)]
+# =============================================================================
+# [storage.postgres]
+# Database connection URL
+# db_url = "postgres://user:pass@localhost/zeroclaw"
 
-# Operator user (controls the node)
-operator = "root"
+# Connection timeout in seconds
+# connect_timeout_secs = 5
+
+# =============================================================================
+# [Web Search - Internet Search]
+# =============================================================================
+[web_search]
+# Enable web search (default: true)
+enabled = true
+
+# Search provider: duckduckgo (default), brave
+provider = "duckduckgo"
+
+# Maximum results per search
+max_results = 5
+
+# Search timeout in seconds
+timeout_secs = 15

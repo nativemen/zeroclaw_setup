@@ -42,18 +42,11 @@ services:
     env_file:
       - ../build/docker/tailscale/env/.env.tailscale
 
-    environment:
-      - TS_AUTH_ONCE=true
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SOCKET=/var/run/tailscale/tailscaled.sock
-      - TS_USERSPACE=false
-      - TS_NETSTACK=false
-      - TS_SSH_ENABLED=true
-      - TS_EXTRA_ARGS=--operator=65534
-
     volumes:
       - tailscale-state:/var/lib/tailscale
-      - tailscale-sock:/var/run/tailscale
+
+    ports:
+      - "42617:42617"
 
     devices:
       - /dev/net/tun:/dev/net/tun
@@ -86,8 +79,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
 
   # ---------------------------------------------------------------------------
   # ZeroClaw Main Application
@@ -98,52 +91,42 @@ services:
     container_name: zeroclaw
     restart: unless-stopped
 
-    # 共享 Tailscale 的网络命名空间
     network_mode: service:tailscale
 
     # Load environment variables from build/docker/zeroclaw/env/.env.zeroclaw
     env_file:
       - ../build/docker/zeroclaw/env/.env.zeroclaw
 
-    environment:
-      - TS_SOCKET=/var/run/tailscale/tailscaled.sock
-
     volumes:
-      - zeroclaw-config:/zeroclaw-data/.zeroclaw:rw
       - zeroclaw-data:/zeroclaw-data
-      - zeroclaw-logs:/zeroclaw-data/logs
-      - tailscale-sock:/var/run/tailscale
+      - zeroclaw-config:/zeroclaw-data/.zeroclaw:rw
 
-    # 资源限制
+    # Resource limits
     deploy:
       resources:
         limits:
           cpus: "2"
           memory: 2G
 
-    # 健康检查
+    # Health check — uses lightweight status instead of full diagnostics.
     healthcheck:
       test: ["CMD", "zeroclaw", "status"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 10s
 
-    # 降权所有能力
     cap_drop:
       - ALL
 
-    # 日志
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
 
-    # 重启策略
     stop_grace_period: 30s
 
-    # 依赖
     depends_on:
       init-config:
         condition: service_completed_successfully
@@ -156,6 +139,4 @@ services:
 volumes:
   zeroclaw-config:
   zeroclaw-data:
-  zeroclaw-logs:
   tailscale-state:
-  tailscale-sock:
