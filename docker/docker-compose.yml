@@ -12,14 +12,19 @@ services:
     restart: "no"
 
     volumes:
-      - zeroclaw-config:/zeroclaw-data/.zeroclaw
+      - zeroclaw-data:/zeroclaw-data:rw
       - ../build/docker/zeroclaw/config/config.toml:/tmp/config.toml:ro
+      - ../build/docker/zeroclaw/workspace/SOUL.md:/tmp/SOUL.md:ro
 
     command: >
       sh -c "
+        mkdir -p /zeroclaw-data/.zeroclaw &&
         cp /tmp/config.toml /zeroclaw-data/.zeroclaw/config.toml &&
         chmod 600 /zeroclaw-data/.zeroclaw/config.toml &&
-        chown -R 65534:65534 /zeroclaw-data/.zeroclaw
+        mkdir -p /zeroclaw-data/workspace &&
+        cp /tmp/SOUL.md /zeroclaw-data/workspace/SOUL.md &&
+        chmod 644 /zeroclaw-data/workspace/SOUL.md &&
+        chown -R 65534:65534 /zeroclaw-data
       "
 
     logging:
@@ -98,8 +103,7 @@ services:
       - ../build/docker/zeroclaw/env/.env.zeroclaw
 
     volumes:
-      - zeroclaw-data:/zeroclaw-data
-      - zeroclaw-config:/zeroclaw-data/.zeroclaw:rw
+      - zeroclaw-data:/zeroclaw-data:rw
 
     # Resource limits
     deploy:
@@ -137,6 +141,5 @@ services:
 # Volumes
 # =============================================================================
 volumes:
-  zeroclaw-config:
   zeroclaw-data:
   tailscale-state:

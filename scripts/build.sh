@@ -685,7 +685,7 @@ cleanup_tailscale_offline() {
                     -X DELETE -H "Authorization: Bearer $tailscale_api_token" 2>&1)
                 if [[ $curl_response == *"HTTP200"* ]]; then
                     print_success "Removed: expired offline device $device_id"
-                    removed_count=$((removed_count+1))
+                    removed_count=$((removed_count + 1))
                 else
                     print_warning "Failed: $device_id - check scopes/key - response: $curl_response"
                 fi
@@ -933,11 +933,11 @@ setup_directories() {
     for subdir in docker; do
         validate_directory "$BUILD_DIR/$subdir" || return 1
     done
-    # Also create the zeroclaw/config subdirectory for config mounting
+    # Zeroclaw subdirectories (logical order: config, env, workspace)
     validate_directory "$BUILD_DIR/docker/zeroclaw/config" || return 1
-    # Also create the zeroclaw/env subdirectory for env file mounting
     validate_directory "$BUILD_DIR/docker/zeroclaw/env" || return 1
-    # Also create the tailscale/env subdirectory for env file mounting
+    validate_directory "$BUILD_DIR/docker/zeroclaw/workspace" || return 1
+    # Tailscale subdirectory
     validate_directory "$BUILD_DIR/docker/tailscale/env" || return 1
     print_success "Build directories created"
 }
@@ -954,11 +954,21 @@ setup_config() {
     fi
 
     if cp --preserve "$src_config" "$dest_config" 2> /dev/null; then
-        # Make config readable for container (container runs as root)
         print_success "Config copied to $dest_config"
     else
         print_error "Failed to copy config file"
         return 1
+    fi
+
+    # Copy SOUL.md to workspace
+    local src_soul="$DOCKER_DIR/zeroclaw/SOUL.md"
+    local dest_workspace="$BUILD_DIR/docker/zeroclaw/workspace"
+    if [[ -f $src_soul ]]; then
+        mkdir -p "$dest_workspace"
+        cp --preserve "$src_soul" "$dest_workspace/SOUL.md"
+        print_success "SOUL.md copied to $dest_workspace/SOUL.md"
+    else
+        print_warning "SOUL.md source not found: $src_soul"
     fi
 }
 
