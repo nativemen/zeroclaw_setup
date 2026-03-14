@@ -789,7 +789,7 @@ start_container() {
 
     # Now start zeroclaw
     print_info "Starting ZeroClaw container..."
-    if ! $dc up -d zeroclaw; then
+    if ! ($dc build --no-cache zeroclaw && $dc up -d zeroclaw); then
         print_error "Failed to start ZeroClaw container"
         return 1
     fi

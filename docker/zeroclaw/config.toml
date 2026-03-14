@@ -1,7 +1,6 @@
 # ZeroClaw Configuration File
 # Optimized comments: Detailed per-field explanations, redundancies removed.
 # Format: TOML. All values preserved; only comments optimized.
-# Lines <=120 chars.
 
 # API Configuration Section
 
