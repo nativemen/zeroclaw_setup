@@ -17,6 +17,12 @@ services:
     env_file:
       - ../build/docker/tailscale/env/.env.tailscale
 
+    command: >-
+      sh -c "
+        ip link set dev eth0 mtu 1280 2>/dev/null || true &&
+        exec /usr/local/bin/containerboot \"$$@\"
+      "
+
     volumes:
       - tailscale-state:/var/lib/tailscale
 
