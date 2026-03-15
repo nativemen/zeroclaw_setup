@@ -13,17 +13,17 @@ api_key = ""
 
 # default_provider: Default LLM provider.
 # Type: string.
-# Options: "deepseek", "ollama" (local), "openai", "anthropic", "google".
-# Default: "deepseek".
+# Options: "zai", "moonshot", "minimax", "deepseek", "ollama" (local), "openai", "anthropic", "google", "openrouter".
+# Default: "zai".
 # Usage: Fallback provider for requests.
-default_provider = "deepseek"
+default_provider = "zai"
 
 # default_model: Target model for generation.
 # Type: string.
-# Options: "deepseek-chat" (standard), "deepseek-reasoner" (complex logic).
-# Default: "deepseek-chat".
+# Options: "glm-4.7", "glm-5", "glm-4.6".
+# Default: "glm-4.7".
 # Usage: Specific model within provider.
-default_model = "deepseek-chat"
+default_model = "glm-4.7"
 
 # default_temperature: Sampling temperature for generation.
 # Type: float. Range: 0.0-1.0. Default: 0.4.

@@ -16,28 +16,33 @@ DOCKER_DIR="$PROJECT_ROOT/docker"
 CONFIG_DIR="$PROJECT_ROOT/config"
 
 # Configurable defaults
-DEFAULT_IMAGE="ghcr.io/zeroclaw-labs/zeroclaw:v0.1.7"
 DEFAULT_GATEWAY_PORT="42617"
-DEFAULT_PROVIDER="deepseek"
-DEFAULT_MODEL="deepseek-chat"
+DEFAULT_PROVIDER="zai-cn"
+DEFAULT_MODEL="glm-4.7"
 
 # Provider definitions (easily extensible)
 declare -A PROVIDER_MODELS=(
+    ["zai-cn"]="glm-5 glm-4.7 glm-4.6"
+    ["moonshot"]="kimi-k2.5 kimi-k2-thinking kimi-k2-thinking-turbo"
+    ["minimax-cn"]="minimax-m2.5 minimax-m2.1 minimax-m2"
     ["deepseek"]="deepseek-chat deepseek-coder deepseek-reasoner"
     ["ollama"]="llama3 mistral codellama"
     ["openai"]="gpt-4o gpt-4o-mini gpt-4-turbo"
-    ["openrouter"]="anthropic/claude-3.5-sonnet google/gemini-pro-1.5 meta-llama/llama-3.1-70b-instruct"
     ["anthropic"]="claude-sonnet-4-20250514 claude-opus-4-20250514 claude-3-5-haiku-20241022"
-    ["google"]="gemini-2.0-flash-exp gemini-1.5-pro gemini-1.5-flash"
+    ["google"]="gemini-2.5-flash gemini-2.0-flash gemini-1.5-flash"
+    ["openrouter"]="anthropic/claude-3.5-sonnet google/gemini-pro-1.5 meta-llama/llama-3.1-70b-instruct"
 )
 
 declare -A PROVIDER_DEFAULTS=(
+    ["zai-cn"]="glm-5"
+    ["moonshot"]="kimi-k2.5"
+    ["minimax-cn"]="minimax-m2.5"
     ["deepseek"]="deepseek-chat"
     ["ollama"]="llama3"
     ["openai"]="gpt-4o"
-    ["openrouter"]="anthropic/claude-3.5-sonnet"
     ["anthropic"]="claude-sonnet-4-20250514"
-    ["google"]="gemini-2.0-flash-exp"
+    ["google"]="gemini-2.5-flash"
+    ["openrouter"]="anthropic/claude-3.5-sonnet"
 )
 
 # Colors for output
@@ -92,10 +97,48 @@ print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1" >&2; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1" >&2; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
+mask_sensitive_key() {
+    local key="$1"
+    local prefix_len="${2:-4}"
+    local suffix_len="${3:-4}"
+    local min_len="${4:-12}"
+
+    if [[ -n "$key" ]]; then
+        local key_len=${#key}
+        if [[ $key_len -gt $min_len ]]; then
+            echo "${key:0:$prefix_len}...${key: -$suffix_len}"
+        else
+            echo "****"
+        fi
+    else
+        echo "(not set)"
+    fi
+}
+
 print_header() {
     echo -e "${CYAN}========================================${NC}"
     echo -e "${CYAN}  $1${NC}"
     echo -e "${CYAN}========================================${NC}" >&2
+}
+
+# Prompt for normal input (required - loops until non-empty input is provided)
+prompt_normal_input() {
+    local prompt_text="$1"
+    local value=""
+
+    while true; do
+        echo -n "$prompt_text" >&2
+        read -r value
+        echo "" >&2
+
+        if [[ -n $value ]]; then
+            break
+        else
+            print_warning "Input cannot be empty. Please try again."
+        fi
+    done
+
+    echo "$value"
 }
 
 # Prompt for sensitive input (required - loops until non-empty input is provided)
@@ -164,13 +207,15 @@ prompt_provider() {
 
     echo "" >&2
     echo "Available providers:" >&2
-    echo "  1) deepseek (default)" >&2
-    echo "  2) ollama" >&2
-    echo "  3) google" >&2
-    echo "  4) openrouter" >&2
-    echo "  5) openai" >&2
-    echo "  6) anthropic" >&2
-    echo "  7) other" >&2
+    echo "  1) zai-cn (default)" >&2
+    echo "  2) moonshot" >&2
+    echo "  3) minimax-cn" >&2
+    echo "  4) deepseek" >&2
+    echo "  5) ollama" >&2
+    echo "  6) openai" >&2
+    echo "  7) anthropic" >&2
+    echo "  8) google" >&2
+    echo "  9) openrouter" >&2
 
     if [[ -n $current_provider ]]; then
         echo -n "Select provider [${current_provider}]: " >&2
@@ -180,13 +225,16 @@ prompt_provider() {
     read -r choice
 
     case "$choice" in
-        2) echo "ollama" ;;
-        3) echo "google" ;;
-        4) echo "openrouter" ;;
-        5) echo "openai" ;;
-        6) echo "anthropic" ;;
-        7) echo "other" ;;
-        *) echo "${current_provider:-deepseek}" ;;
+        1) echo "zai-cn" ;;
+        2) echo "moonshot" ;;
+        3) echo "minimax-cn" ;;
+        4) echo "deepseek" ;;
+        5) echo "ollama" ;;
+        6) echo "openai" ;;
+        7) echo "anthropic" ;;
+        8) echo "google" ;;
+        9) echo "openrouter" ;;
+        *) echo "${current_provider:-${DEFAULT_PROVIDER}}" ;;
     esac
 }
 
@@ -197,16 +245,8 @@ prompt_model() {
 
     local models="${PROVIDER_MODELS[$provider]:-}"
 
-    # Handle 'other' provider
-    if [[ $provider == "other" ]]; then
-        echo -n "Enter model name: " >&2
-        read -r model
-        echo "${model:-gpt-4o}"
-        return
-    fi
-
     if [[ -z $models ]]; then
-        echo "${current_model:-${PROVIDER_DEFAULTS[$provider]:-gpt-4o}}"
+        echo "${current_model:-${PROVIDER_DEFAULTS[$provider]:-${DEFAULT_PROVIDER}}}"
         return
     fi
 
@@ -259,9 +299,9 @@ clean_backup_files() {
     local backup_dir="$BUILD_DIR/docker"
     if [[ -d $backup_dir ]]; then
         local backup_count
-        backup_count=$(find "$backup_dir" -maxdepth 1 -name ".env.backup.*" -type f 2> /dev/null | wc -l)
+        backup_count=$(find "$backup_dir" -maxdepth 10 -name "*backup*" -type f 2> /dev/null | wc -l)
         if [[ $backup_count -gt 0 ]]; then
-            find "$backup_dir" -maxdepth 1 -name ".env.backup.*" -type f -delete 2> /dev/null
+            find "$backup_dir" -maxdepth 10 -name "*backup*" -type f -delete 2> /dev/null
             print_info "Cleaned $backup_count backup file(s) from $backup_dir"
         fi
     fi
@@ -295,12 +335,15 @@ read_env_value() {
 
 # Provider to API key environment variable mapping
 declare -A PROVIDER_API_KEYS=(
+    ["zai-cn"]="GLM_API_KEY"
+    ["moonshot"]="MOONSHOT_API_KEY"
+    ["minimax-cn"]="MINIMAX_API_KEY"
     ["deepseek"]="DEEPSEEK_API_KEY"
     ["ollama"]=""
     ["openai"]="OPENAI_API_KEY"
-    ["openrouter"]="OPENROUTER_API_KEY"
     ["anthropic"]="ANTHROPIC_API_KEY"
     ["google"]="GEMINI_API_KEY"
+    ["openrouter"]="OPENROUTER_API_KEY"
 )
 
 setup_environment() {
@@ -346,7 +389,6 @@ setup_environment() {
 
         provider=$(prompt_provider)
         model=$(prompt_model "$provider" "$DEFAULT_MODEL")
-
         api_key=$(prompt_sensitive_input "Enter your LLM API key: ")
 
         echo -n "Enter gateway port [${DEFAULT_GATEWAY_PORT}]: " >&2
@@ -416,18 +458,7 @@ setup_environment() {
         local existing_api_key
         existing_api_key=$(read_env_value "$zeroclaw_env_file" "ZEROCLAW_API_KEY" "")
 
-        # Mask API key: show first 4 and last 4 characters
-        local masked_api_key=""
-        if [[ -n $existing_api_key ]]; then
-            local key_len=${#existing_api_key}
-            if [[ $key_len -gt 12 ]]; then
-                masked_api_key="${existing_api_key:0:4}...${existing_api_key: -4}"
-            else
-                masked_api_key="****"
-            fi
-        else
-            masked_api_key="(not set)"
-        fi
+        masked_api_key=$(mask_sensitive_key "$existing_api_key" 4 4 12)
 
         echo "" >&2
         echo "Detect Current AI Model Settings:" >&2
@@ -445,27 +476,17 @@ setup_environment() {
         if [[ $force_update == "2" ]]; then
             provider=$(prompt_provider "$existing_provider")
             model=$(prompt_model "$provider" "$existing_model")
-
-            echo "" >&2
-            echo -n "Update API key? (y/N): " >&2
-            read -r update_key
-
-            if [[ $update_key =~ ^[Yy]$ ]]; then
-                api_key=$(prompt_sensitive_input "Enter your LLM API key: ")
-
-                backup_env_file "$zeroclaw_env_file"
-                update_env_file "$zeroclaw_env_file" "ZEROCLAW_API_KEY" "$api_key"
-                print_success "API key updated"
-            fi
+            api_key=$(prompt_sensitive_input "Enter your LLM API key: ")
 
             backup_env_file "$zeroclaw_env_file"
+
             update_env_file "$zeroclaw_env_file" "ZEROCLAW_PROVIDER" "$provider"
             update_env_file "$zeroclaw_env_file" "ZEROCLAW_MODEL" "$model"
-            print_success "Provider: $provider, Model: $model"
+            update_env_file "$zeroclaw_env_file" "ZEROCLAW_API_KEY" "$api_key"
+
+            print_success "Provider: $provider, Model: $model, API Key updated"
         else
             print_info "Skipped AI model settings update (using existing configuration)"
-            provider="$existing_provider"
-            model="$existing_model"
         fi
 
         # Tailscale Configuration Update (show option to update)
@@ -473,18 +494,8 @@ setup_environment() {
         echo "Detect Current Tailscale Configuration:" >&2
         local current_tailscale_key
         current_tailscale_key=$(read_env_value "$tailscale_env_file" "TS_AUTHKEY" "")
-        local masked_tailscale_key=""
-        if [[ -n $current_tailscale_key ]]; then
-            local key_len=${#current_tailscale_key}
-            if [[ $key_len -gt 14 ]]; then
-                masked_tailscale_key="${current_tailscale_key:0:8}...${current_tailscale_key: -6}"
-            else
-                masked_tailscale_key="****"
-            fi
-            echo "  Auth Key:  $masked_tailscale_key" >&2
-        else
-            echo "  Auth Key:  (not set)" >&2
-        fi
+        masked_tailscale_key=$(mask_sensitive_key "$current_tailscale_key" 8 6 14)
+        echo "  Auth Key:  $masked_tailscale_key" >&2
         echo "" >&2
         echo "Select an option:" >&2
         echo "  1) Skip Tailscale Auth Key update (default)" >&2
@@ -498,6 +509,7 @@ setup_environment() {
 
             backup_env_file "$tailscale_env_file"
             update_env_file "$tailscale_env_file" "TS_AUTHKEY" "$tailscale_auth_key"
+
             print_success "Tailscale Auth Key updated"
         else
             print_info "Skipped Tailscale configuration update (using existing configuration)"
@@ -513,15 +525,6 @@ check_docker() {
     print_info "Checking Docker..."
     validate_docker || return 1
     print_success "Docker is available"
-}
-
-pull_image() {
-    print_info "Pulling ZeroClaw image..."
-    if docker pull "$DEFAULT_IMAGE" 2> /dev/null; then
-        print_success "Image pulled"
-    else
-        print_warning "Could not pull latest image, using cached version"
-    fi
 }
 
 cleanup_old() {
@@ -599,11 +602,7 @@ cleanup_tailscale_offline() {
     current_tailnet_id=$(read_env_value "$cfg_file" "TAILSCALE_TAILNET_ID" "")
 
     if [[ -n $current_api_token && -n $current_tailnet_id ]]; then
-        # Mask API key like existing Tailscale logic
-        local masked_key="****"
-        if [[ ${#current_api_token} -gt 14 ]]; then
-            masked_key="${current_api_token:0:8}...${current_api_token: -6}"
-        fi
+        masked_key=$(mask_sensitive_key "$current_api_token" 8 6 14)
 
         echo "Detect Current Tailscale Configuration:" >&2
         echo "  Tailscale API Access Token:  $masked_key" >&2
@@ -638,7 +637,7 @@ cleanup_tailscale_offline() {
         fi
 
         print_info 'Note: Please get your Tailscale tailnet ID from "https://login.tailscale.com/admin/settings/general".'
-        tailscale_tailnet_id=$(prompt_sensitive_input "Enter your Tailscale tailnet ID: ")
+        tailscale_tailnet_id=$(prompt_normal_input "Enter your Tailscale tailnet ID: ")
 
         # Save to config
         if [[ ! -f $cfg_file ]]; then
@@ -730,7 +729,7 @@ get_tailscale_ip() {
 }
 
 start_container() {
-    print_info "Starting ZeroClaw container..."
+    print_info "Starting Containers..."
 
     local dc
     dc=$(get_docker_compose) || return 1
@@ -903,15 +902,14 @@ pipeline_build_and_run() {
         "check_docker:Step 3: Checking Docker"
         "setup_environment:Step 4: Setting up environment"
         "setup_config:Step 5: Setting up config file"
-        "pull_image:Step 6: Pulling latest image"
-        "cleanup_old:Step 7: Cleaning up old containers"
-        "start_container:Step 8: Starting container"
+        "cleanup_old:Step 6: Cleaning up old containers"
+        "start_container:Step 7: Starting containers"
     )
 
     local step_func step_desc
     for step in "${steps[@]}"; do
         step_func="${step%%:*}"
-        step_desc="${step##*:}"
+        step_desc="${step#*:}"
         print_info "$step_desc..."
 
         if ! $step_func; then
@@ -964,7 +962,7 @@ setup_config() {
     local dest_workspace="$BUILD_DIR/docker/zeroclaw/workspace"
     mkdir -p "$dest_workspace"
     for md_file in "$DOCKER_DIR/zeroclaw"/*.md; do
-        if [[ -f "$md_file" ]]; then
+        if [[ -f $md_file ]]; then
             local filename=$(basename "$md_file")
             cp --preserve "$md_file" "$dest_workspace/$filename"
             print_success "$filename copied to $dest_workspace/$filename"

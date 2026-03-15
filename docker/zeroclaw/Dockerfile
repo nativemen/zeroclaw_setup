@@ -1,7 +1,23 @@
 FROM ubuntu:24.04
 
 RUN apt-get update && \
-    apt-get install -y git curl bash procps ca-certificates coreutils debianutils && \
+    apt-get install -y \
+        git \
+        curl \
+        bash \
+        procps \
+        ca-certificates \
+        coreutils \
+        bash \
+        procps \
+        debianutils \
+        vim-tiny \
+        iproute2 \
+        iputils-ping \
+        iputils-tracepath \
+        dnsutils \
+        net-tools \
+        && \
     apt-get autoremove && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -20,7 +36,7 @@ RUN chmod 600 /zeroclaw-data/.zeroclaw/config.toml && \
 COPY --from=ghcr.io/zeroclaw-labs/zeroclaw:v0.1.7 /usr/local/bin/zeroclaw /usr/local/bin/zeroclaw
 
 # Set environment variables (inherited from original image)
-ENV PATH="/bin:/usr/bin:/usr/local/bin:\${PATH}" \
+ENV PATH="/bin:/sbin:/usr/local/bin:\${PATH}" \
     SHELL=/bin/bash \
     HOME=/zeroclaw-data \
     ZEROCLAW_WORKSPACE=/zeroclaw-data/workspace \
