@@ -17,17 +17,12 @@ services:
     env_file:
       - ../build/docker/tailscale/env/.env.tailscale
 
-    command: >-
-      sh -c "
-        ip link set dev eth0 mtu 1280 2>/dev/null || true &&
-        exec /usr/local/bin/containerboot \"$$@\"
-      "
-
     volumes:
+      - ./tailscale/serve-config.json:/etc/tailscaled/serve-config.json:ro
       - tailscale-state:/var/lib/tailscale
 
     ports:
-      - "42617:42617"
+      - "127.0.0.1:42617:42617"
 
     devices:
       - /dev/net/tun:/dev/net/tun
@@ -38,7 +33,6 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-      - SYS_MODULE
 
     security_opt:
       - apparmor:unconfined
@@ -62,6 +56,11 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+
+    networks:
+      default:
+        aliases:
+          - tailscale
 
   # ---------------------------------------------------------------------------
   # ZeroClaw Main Application
@@ -119,3 +118,9 @@ services:
 # =============================================================================
 volumes:
   tailscale-state:
+
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1500"

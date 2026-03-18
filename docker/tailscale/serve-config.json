@@ -1,0 +1,26 @@
+{
+    "TCP": {
+        "80": {
+            "HTTP": true
+        },
+        "443": {
+            "HTTPS": true
+        }
+    },
+    "Web": {
+        "tailscale.tail00133f.ts.net:80": {
+            "Handlers": {
+                "/": {
+                    "Proxy": "http://127.0.0.1:42617"
+                }
+            }
+        },
+        "tailscale.tail00133f.ts.net:443": {
+            "Handlers": {
+                "/": {
+                    "Proxy": "http://127.0.0.1:42617"
+                }
+            }
+        }
+    }
+}
