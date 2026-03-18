@@ -22,7 +22,7 @@ DEFAULT_MODEL="glm-4.7"
 
 # Provider definitions (easily extensible)
 declare -A PROVIDER_MODELS=(
-    ["zai-cn"]="glm-5 glm-4.7 glm-4.6"
+    ["zai-cn"]="glm-4.7 glm-4.6 glm-5"
     ["moonshot"]="kimi-k2.5 kimi-k2-thinking kimi-k2-thinking-turbo"
     ["minimax-cn"]="minimax-m2.5 minimax-m2.1 minimax-m2"
     ["deepseek"]="deepseek-chat deepseek-coder deepseek-reasoner"
@@ -34,7 +34,7 @@ declare -A PROVIDER_MODELS=(
 )
 
 declare -A PROVIDER_DEFAULTS=(
-    ["zai-cn"]="glm-5"
+    ["zai-cn"]="glm-4.7"
     ["moonshot"]="kimi-k2.5"
     ["minimax-cn"]="minimax-m2.5"
     ["deepseek"]="deepseek-chat"
@@ -45,6 +45,9 @@ declare -A PROVIDER_DEFAULTS=(
     ["openrouter"]="anthropic/claude-3.5-sonnet"
 )
 
+# Debug mode flag (enabled with -d parameter)
+DEBUG_MODE="false"
+
 # Colors for output
 RED='\033[0;31m'
 GRAY='\033[0;37m'
@@ -53,6 +56,24 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+detect_docker_compose() {
+    # Check for Docker Compose V2 (plugin)
+    if docker compose version > /dev/null 2>&1; then
+        DOCKER_COMPOSE="docker compose"
+        return 0
+    # Check for Docker Compose V1 (standalone)
+    elif command -v docker-compose > /dev/null 2>&1; then
+        DOCKER_COMPOSE="docker-compose"
+        return 0
+    else
+        print_error "docker-compose not found"
+        return 1
+    fi
+}
+
+detect_docker_compose || exit 1
+readonly DOCKER_COMPOSE
 
 # =============================================================================
 # Traceback / Error Handling (Top-tier engineer pattern)
@@ -92,7 +113,11 @@ trap 'cleanup_handler' EXIT
 # =============================================================================
 # Utility Functions
 # =============================================================================
-print_debug() { echo -e "${GRAY}[DEBUG]${NC} $1" >&2; }
+print_debug() {
+    if [[ $DEBUG_MODE == "true" ]]; then
+        echo -e "${GRAY}[DEBUG]${NC} $1" >&2
+    fi
+}
 print_info() { echo -e "${BLUE}[INFO]${NC} $1" >&2; }
 print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1" >&2; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1" >&2; }
@@ -168,10 +193,12 @@ validate_docker() {
         print_error "Docker is not installed"
         return 1
     fi
+
     if ! docker info &> /dev/null; then
         print_error "Docker is not running. Please start Docker first."
         return 1
     fi
+
     return 0
 }
 
@@ -184,18 +211,6 @@ validate_directory() {
         fi
     fi
     return 0
-}
-
-# Get docker compose command (prioritizes v2, falls back to v1)
-get_docker_compose() {
-    if docker compose version &> /dev/null 2>&1; then
-        echo "docker compose"
-    elif command -v docker-compose &> /dev/null; then
-        echo "docker-compose"
-    else
-        print_error "docker-compose not found"
-        return 1
-    fi
 }
 
 # =============================================================================
@@ -280,6 +295,27 @@ prompt_model() {
     fi
 }
 
+prompt_gateway_port() {
+    local current_port="${1:-$DEFAULT_GATEWAY_PORT}"
+    local port=""
+
+    while true; do
+        echo -en "Enter ZeroClaw gateway port (1025-65535) [${current_port}]: " >&2
+        read -r port
+        echo "" >&2
+
+        if [[ -n $port && $port =~ ^[0-9]+$ && $port -ge 1025 && $port -le 65535 ]]; then
+            echo "$port"
+            return 0
+        elif [[ -z $port ]]; then
+            echo "$current_port"
+            return 0
+        else
+            print_warning "Invalid port '$port'. Must be numeric between 1025-65535."
+        fi
+    done
+}
+
 # =============================================================================
 # Environment Setup Functions (SRP pattern)
 # =============================================================================
@@ -319,6 +355,9 @@ update_env_file() {
         else
             echo "${key}=${value}" >> "$env_file"
         fi
+    else
+        validate_directory "$(dirname "$env_file")" || return 1
+        echo "${key}=${value}" > "$env_file"
     fi
 }
 
@@ -353,7 +392,7 @@ copy_tailscale_env_file() {
 
     if [[ ! -f $tailscale_env_file ]]; then
         if [[ -f $tailscale_env_example ]]; then
-            print_info "Copying $tailscale_env_example to $tailscale_env_file to preserve comments..."
+            print_info "Copying Tailscale env file..."
             cp -v "$tailscale_env_example" "$tailscale_env_file"
         else
             print_warning "$tailscale_env_example not found, creating new configuration..."
@@ -366,9 +405,8 @@ copy_tailscale_env_file() {
     local tailscale_env_perms=$(stat -c "%a" "$tailscale_env_file" 2> /dev/null || echo "unknown")
 
     if [[ $tailscale_env_perms != "600" && $tailscale_env_perms != "400" ]]; then
-        print_warning "Insecure file permissions on $tailscale_env_file: $tailscale_env_perms"
         chmod 600 "$tailscale_env_file"
-        print_success "Fix $tailscale_env_file Permissions to 600"
+        print_info "Fix $tailscale_env_file Permissions to 600"
     fi
 }
 
@@ -380,7 +418,7 @@ setup_tailscale_env() {
     copy_tailscale_env_file "$tailscale_env_file" "$tailscale_env_example"
 
     local existing_auth_key=$(read_env_value "$tailscale_env_file" "TS_AUTHKEY" "")
-    local need_update=true
+    local need_update="true"
 
     if [[ -n $existing_auth_key ]]; then
         local force_update=1
@@ -400,11 +438,11 @@ setup_tailscale_env() {
         if [[ $force_update != "2" ]]; then
             print_info "Skipped Tailscale Auth Key update (using existing settings)."
             echo "" >&2
-            need_update=false
+            need_update="false"
         fi
     fi
 
-    if [[ $need_update == true ]]; then
+    if [[ $need_update == "true" ]]; then
         print_info "Setting up Tailscale Auth Key..."
         tailscale_auth_key=$(prompt_sensitive_input "Enter Tailscale Auth Key: ")
 
@@ -427,7 +465,7 @@ get_tailscale_api_token() {
 }
 
 load_tailscale_api_token() {
-    local needs_prompt=true
+    local needs_prompt="true"
     local tailscale_cfg_file="$BUILD_DIR/tailscale.cfg"
     local tailscale_api_token=$(get_tailscale_api_token)
 
@@ -449,11 +487,11 @@ load_tailscale_api_token() {
         if [[ $update_choice != "2" ]]; then
             print_info "Skipped Tailscale API Access Token update (using existing settings)."
             echo "" >&2
-            needs_prompt=false
+            needs_prompt="false"
         fi
     fi
 
-    if [[ $needs_prompt == true ]]; then
+    if [[ $needs_prompt == "true" ]]; then
         print_info "Setting up Tailscale API Access Token..."
         print_info 'NOTE: Get from "https://login.tailscale.com/admin/settings/keys".'
         tailscale_api_token=$(prompt_sensitive_input "Enter Tailscale API Access Token: ")
@@ -615,7 +653,7 @@ setup_tailscale_https() {
 }
 
 setup_tailscale_features() {
-    local tailscale_api_token=$(load_tailscale_api_token)
+    local tailscale_api_token=$(get_tailscale_api_token)
 
     if [[ -z $tailscale_api_token ]]; then
         print_error "No Tailscale API token available. Skipping Tailscale features configuration."
@@ -653,7 +691,7 @@ copy_zeroclaw_env_file() {
     if [[ ! -f $zeroclaw_env_file ]]; then
         # Check if .env.zeroclaw.example exists, copy it to preserve comments and format
         if [[ -f $zeroclaw_env_example ]]; then
-            print_info "Copying $zeroclaw_env_example to $zeroclaw_env_file to preserve comments..."
+            print_info "Copying ZeroClaw env file..."
             cp -v "$zeroclaw_env_example" "$zeroclaw_env_file"
         else
             print_warning "$zeroclaw_env_example not found, creating new configuration..."
@@ -666,9 +704,8 @@ copy_zeroclaw_env_file() {
     local zeroclaw_env_perms=$(stat -c "%a" "$zeroclaw_env_file" 2> /dev/null || echo "unknown")
 
     if [[ $zeroclaw_env_perms != "600" && $zeroclaw_env_perms != "400" ]]; then
-        print_warning "Insecure file permissions on $zeroclaw_env_file: $zeroclaw_env_perms"
         chmod 600 "$zeroclaw_env_file"
-        print_success "Fix $zeroclaw_env_file Permissions to 600"
+        print_info "Fix $zeroclaw_env_file Permissions to 600"
     fi
 }
 
@@ -683,7 +720,7 @@ setup_zeroclaw_env() {
     local existing_model=$(read_env_value "$zeroclaw_env_file" "ZEROCLAW_MODEL" "$DEFAULT_MODEL")
     local existing_api_key=$(read_env_value "$zeroclaw_env_file" "ZEROCLAW_API_KEY" "")
     local existing_gateway_port=$(read_env_value "$zeroclaw_env_file" "ZEROCLAW_GATEWAY_PORT" "$DEFAULT_GATEWAY_PORT")
-    local need_update=true
+    local need_update="true"
 
     if [[ -n $existing_provider && -n $existing_model && -n $existing_api_key && -n $existing_gateway_port ]]; then
         local force_update=1
@@ -706,17 +743,17 @@ setup_zeroclaw_env() {
         if [[ $force_update != "2" ]]; then
             print_info "Skipped AI Model Settings update (using existing settings)."
             echo "" >&2
-            need_update=false
+            need_update="false"
         fi
     fi
 
-    if [[ $need_update == true ]]; then
+    if [[ $need_update == "true" ]]; then
         print_info "Setting up ZeroClaw AI Model Settings..."
 
         provider=$(prompt_provider)
         model=$(prompt_model "$provider" "$DEFAULT_MODEL")
         api_key=$(prompt_sensitive_input "Enter your LLM API key: ")
-        gateway_port=$(prompt_normal_input "Enter gateway port [${DEFAULT_GATEWAY_PORT}]: ")
+        gateway_port=$(prompt_gateway_port "${existing_gateway_port:-$DEFAULT_GATEWAY_PORT}")
 
         umask 0077
 
@@ -782,9 +819,9 @@ delete_tailscale_device() {
     return 0
 }
 
-cleanup_tailscale_devices() {
+remove_tailscale_devices() {
     local tailscale_api_token
-    tailscale_api_token=$(get_tailscale_api_token)
+    tailscale_api_token=$(load_tailscale_api_token)
 
     if [[ -z $tailscale_api_token ]]; then
         print_error "No Tailscale API token available. Skipping Tailscale devices cleanup."
@@ -865,7 +902,7 @@ set_tailscale_policy() {
     return 0
 }
 
-tailscale_policy_setup() {
+setup_tailscale_policy() {
     local tailscale_tag_name="tag:tailscale"
     local tailscale_api_token=$(get_tailscale_api_token)
 
@@ -892,14 +929,14 @@ print(text)" 2> /dev/null || echo "{}"
     print_debug "Policy Json Preview:"
     print_debug "$policy_json"
 
-    local need_update=true
+    local need_update="true"
 
-    if echo "$policy_json" | jq -e ".tagOwners[\"$tailscale_tag_name\"] | select(. != null) | contains([\"autogroup:admin\"])" 2>&1; then
+    if echo "$policy_json" | jq -e ".tagOwners[\"$tailscale_tag_name\"] | select(. != null) | contains([\"autogroup:admin\"])" > /dev/null 2>&1; then
         print_info "Tailscale tailnet policy already exists, skipping update..."
-        need_update=false
+        need_update="false"
     fi
 
-    if [[ $need_update == true ]]; then
+    if [[ $need_update == "true" ]]; then
         print_info "Setting up Tailscale tailnet policy for ZeroClaw..."
         set_tailscale_policy "$tailscale_api_token" "$tailscale_tag_name" || return 1
         print_success "Tailscale tailnet policy for ZeroClaw setup successfully"
@@ -921,15 +958,26 @@ setup_environment() {
     setup_tailscale_env "$tailscale_env_file" "$tailscale_env_example"
     setup_zeroclaw_env "$zeroclaw_env_file" "$zeroclaw_env_example"
 
-    local setup_result=$(setup_tailscale_features)
+    remove_tailscale_devices
 
-    if [[ $setup_result -ne 0 ]]; then
-        print_error "Tailscale features setup encountered issues. Please check your API token and network settings."
+    if [[ $? -ne 0 ]]; then
+        print_error "Tailscale devices remove encountered issues. Please check your API token and network settings."
         return 1
     fi
 
-    cleanup_tailscale_devices
-    tailscale_policy_setup
+    setup_tailscale_policy
+
+    if [[ $? -ne 0 ]]; then
+        print_error "Tailscale policy setup encountered issues. Please check your API token and network settings."
+        return 1
+    fi
+
+    setup_tailscale_features
+
+    if [[ $? -ne 0 ]]; then
+        print_error "Tailscale features setup encountered issues. Please check your API token and network settings."
+        return 1
+    fi
 
     print_success "TailScale and ZeroClaw environment setup completed successfully"
 
@@ -940,23 +988,22 @@ setup_environment() {
 # Docker Operations (Single Responsibility)
 # =============================================================================
 
-check_docker() {
-    print_info "Checking Docker..."
+check_docker_command() {
+    print_info "Checking docker command availability..."
     validate_docker || return 1
-    print_success "Docker is available"
+    print_success "Docker command is available"
+
+    return 0
 }
 
 cleanup_old() {
     print_info "Cleaning up old containers and volumes..."
 
-    local dc
-    dc=$(get_docker_compose) || return 1
-
     cd "$DOCKER_DIR" || {
         print_error "Cannot change to docker directory" && return 1
     }
-    $dc down -v || true
-    docker system prune -a --volumes -f || true
+    $DOCKER_COMPOSE down || true
+    docker system prune -a -f || true
 
     print_success "Cleanup completed"
 }
@@ -1025,16 +1072,13 @@ get_tailscale_ip() {
 start_container() {
     print_info "Starting Containers..."
 
-    local dc
-    dc=$(get_docker_compose) || return 1
-
     cd "$DOCKER_DIR" || {
         print_error "Cannot change to docker directory" && return 1
     }
 
     # Start tailscale first (required for zeroclaw network)
     print_info "Starting Tailscale container..."
-    if ! $dc up -d tailscale; then
+    if ! $DOCKER_COMPOSE up -d tailscale; then
         print_error "Failed to start Tailscale container"
         return 1
     fi
@@ -1080,7 +1124,7 @@ start_container() {
 
     # Now start zeroclaw
     print_info "Starting ZeroClaw container..."
-    if ! $dc up --build --timestamps -d zeroclaw; then
+    if ! $DOCKER_COMPOSE up --build -d zeroclaw; then
         print_error "Failed to start ZeroClaw container"
         return 1
     fi
@@ -1112,7 +1156,9 @@ start_container() {
     fi
 
     print_info "Container status:"
-    $dc ps
+    $DOCKER_COMPOSE ps
+
+    return 0
 }
 
 # =============================================================================
@@ -1123,26 +1169,27 @@ show_help() {
     print_header "ZeroClaw Build Script v$SCRIPT_VERSION"
     cat << EOF
 
-Usage: $0 [command]
+Usage: $0 [-d | --debug] [command1 [command2 ...]]
+  -d, --debug  Enable debug output
 
-Commands:
-  (none)   - Clean build and run (default)
-  help     - Show this help message
-  clean    - Clean build artifacts
-  distclean - Deep clean (removes all generated files)
-  logs     - View container logs
-  status   - Show container status
-  stop     - Stop containers
-  restart  - Restart containers
-  cleanup-tailscale-- Clean up Tailscale peers using API
+Commands (multiple supported, executed sequentially):
+  (none)/build - Clean build and run (default)
+  help         - Show this help message
+  clean        - Clean build artifacts (Docker + backups)
+  distclean    - Deep clean (rm -rf build/)
+  logs         - View container logs
+  status       - Show container status
+  stop         - Stop containers
+  restart      - Restart containers
+  remove       - Remove all Tailscale devices using API
 
 Examples:
-  $0           # Clean build and run
-  $0 help      # Show help
-  $0 clean     # Clean build artifacts
-  $0 distclean # Deep clean all generated files
-  $0 logs      # View logs
-  $0 stop      # Stop containers
+  $0                        # Clean build and run
+  $0 clean remove           # Clean THEN remove Tailscale devices
+  $0 distclean build        # Deep clean THEN build+run
+  $0 help                   # Show help
+  $0 logs                   # View logs
+  $0 stop restart           # Stop THEN restart
 
 EOF
 }
@@ -1161,6 +1208,8 @@ do_clean() {
     validate_directory "$BUILD_DIR" || return 1
 
     print_success "Build directory cleaned - config files preserved"
+
+    return 0
 }
 
 do_distclean() {
@@ -1184,6 +1233,8 @@ do_distclean() {
     fi
 
     print_success "Distclean completed!"
+
+    return 0
 }
 
 # Build and run pipeline (Pipeline pattern)
@@ -1191,7 +1242,7 @@ pipeline_build_and_run() {
     local -a steps=(
         "do_clean:Step 1: Cleaning previous build"
         "setup_directories:Step 2: Setting up build directories"
-        "check_docker:Step 3: Checking Docker"
+        "check_docker_command:Step 3: Checking docker command availability"
         "setup_environment:Step 4: Setting up environment"
         "start_container:Step 5: Starting containers"
     )
@@ -1202,7 +1253,9 @@ pipeline_build_and_run() {
         step_desc="${step#*:}"
         print_info "$step_desc..."
 
-        if ! $step_func; then
+        $step_func
+
+        if [ $? -ne 0 ]; then
             print_error "Failed at: $step_desc"
             return 1
         fi
@@ -1226,36 +1279,29 @@ setup_directories() {
     # Tailscale subdirectory
     validate_directory "$BUILD_DIR/docker/tailscale/env" || return 1
     print_success "Build directories created"
+
+    return 0
 }
 
 do_logs() {
-    local dc
-    dc=$(get_docker_compose) || return 1
-
     cd "$DOCKER_DIR" || {
         print_error "Cannot change to docker directory" && return 1
     }
-    $dc logs -f
+    $DOCKER_COMPOSE logs -f
 }
 
 do_status() {
-    local dc
-    dc=$(get_docker_compose) || return 1
-
     cd "$DOCKER_DIR" || {
         print_error "Cannot change to docker directory" && return 1
     }
-    $dc ps -a
+    $DOCKER_COMPOSE ps -a
 }
 
 do_stop() {
-    local dc
-    dc=$(get_docker_compose) || return 1
-
     cd "$DOCKER_DIR" || {
         print_error "Cannot change to docker directory" && return 1
     }
-    $dc down -v
+    $DOCKER_COMPOSE down
     print_success "Containers stopped"
 }
 
@@ -1271,42 +1317,78 @@ do_restart() {
 # =============================================================================
 
 main() {
-    local command="${1:-}"
+    local -a args=()
+    local has_command="false"
 
-    case "$command" in
-        help | --help | -h)
-            show_help
-            ;;
-        clean)
-            do_clean
-            ;;
-        distclean)
-            do_distclean
-            ;;
-        logs)
-            do_logs
-            ;;
-        status)
-            do_status
-            ;;
-        stop)
-            do_stop
-            ;;
-        restart)
-            do_restart
-            ;;
-        cleanup-tailscale-devices)
-            cleanup_tailscale_devices"$@"
-            ;;
-        "")
-            pipeline_build_and_run
-            ;;
-        *)
-            print_error "Unknown command: $command"
-            show_help
-            return 1
-            ;;
-    esac
+    # Handle flags first
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -d | --debug)
+                print_info "Debug Mode Enabled"
+                DEBUG_MODE="true"
+                shift
+                ;;
+            help | --help | -h)
+                show_help
+                return 0
+                ;;
+            *)
+                # Collect all remaining positional args
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    # If no args provided, default to build+run
+    if [[ ${#args[@]} -eq 0 ]]; then
+        args=("build")
+    fi
+
+    # Execute each command sequentially
+    for arg in "${args[@]}"; do
+        case "$arg" in
+            clean)
+                do_clean
+                has_command="true"
+                ;;
+            distclean)
+                do_distclean
+                has_command="true"
+                ;;
+            logs)
+                do_logs
+                has_command="true"
+                ;;
+            status)
+                do_status
+                has_command="true"
+                ;;
+            stop)
+                do_stop
+                has_command="true"
+                ;;
+            restart)
+                do_restart
+                has_command="true"
+                ;;
+            remove)
+                remove_tailscale_devices
+                has_command="true"
+                ;;
+            build | "")
+                pipeline_build_and_run
+                has_command="true"
+                ;;
+            *)
+                print_warning "Unknown command: $arg (skipping)"
+                ;;
+        esac
+    done
+
+    if [[ $has_command == "false" ]]; then
+        show_help
+    fi
 }
 
 main "$@"
