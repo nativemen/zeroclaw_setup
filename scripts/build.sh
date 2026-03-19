@@ -7,21 +7,22 @@
 set -euo pipefail
 
 # =============================================================================
-# Configuration Variables
+# Configuration Constants (Read-only)
 # =============================================================================
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$PROJECT_ROOT/build"
-DOCKER_DIR="$PROJECT_ROOT/docker"
-CONFIG_DIR="$PROJECT_ROOT/config"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly BUILD_DIR="$PROJECT_ROOT/build"
+readonly DOCKER_DIR="$PROJECT_ROOT/docker"
+readonly CONFIG_DIR="$PROJECT_ROOT/config"
 
 # Configurable defaults
-DEFAULT_GATEWAY_PORT="42617"
-DEFAULT_PROVIDER="zai-cn"
-DEFAULT_MODEL="glm-4.7"
+readonly DEFAULT_GATEWAY_PORT="42617"
+readonly DEFAULT_PROVIDER="zai-cn"
+readonly DEFAULT_MODEL="glm-4.7"
+readonly DEFAULT_TAILSCALE_TAG_NAME="tag:tailscale"
 
 # Provider definitions (easily extensible)
-declare -A PROVIDER_MODELS=(
+declare -Ar PROVIDER_MODELS=(
     ["zai-cn"]="glm-4.7 glm-4.6 glm-5"
     ["moonshot"]="kimi-k2.5 kimi-k2-thinking kimi-k2-thinking-turbo"
     ["minimax-cn"]="minimax-m2.5 minimax-m2.1 minimax-m2"
@@ -33,7 +34,7 @@ declare -A PROVIDER_MODELS=(
     ["openrouter"]="anthropic/claude-3.5-sonnet google/gemini-pro-1.5 meta-llama/llama-3.1-70b-instruct"
 )
 
-declare -A PROVIDER_DEFAULTS=(
+declare -Ar PROVIDER_DEFAULTS=(
     ["zai-cn"]="glm-4.7"
     ["moonshot"]="kimi-k2.5"
     ["minimax-cn"]="minimax-m2.5"
@@ -49,14 +50,17 @@ declare -A PROVIDER_DEFAULTS=(
 DEBUG_MODE="false"
 
 # Colors for output
-RED='\033[0;31m'
-GRAY='\033[0;37m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+readonly RED='\033[0;31m'
+readonly GRAY='\033[0;37m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly CYAN='\033[0;36m'
+readonly NC='\033[0m'
 
+# =============================================================================
+# Phase 1: Basic Detection and Error Handling (Level 0)
+# =============================================================================
 detect_docker_compose() {
     # Check for Docker Compose V2 (plugin)
     if docker compose version > /dev/null 2>&1; then
@@ -93,7 +97,7 @@ error_handler() {
         local caller_func=${caller_frame[1]}
         local caller_file=${caller_frame[2]}
         print_error "  #$i: ${caller_file}:${caller_line} -> ${caller_func}"
-        ((i++))
+        ((i += 1))
     done
     exit "$error_code"
 }
@@ -111,7 +115,7 @@ trap 'error_handler ${LINENO} $?' ERR
 trap 'cleanup_handler' EXIT
 
 # =============================================================================
-# Utility Functions
+# Phase 2: Basic Utility Functions (Level 0 - Dependencies for all functions)
 # =============================================================================
 print_debug() {
     if [[ $DEBUG_MODE == "true" ]]; then
@@ -213,10 +217,22 @@ validate_directory() {
     return 0
 }
 
-# =============================================================================
-# Provider/Model Selection Functions (DRY pattern)
-# =============================================================================
+# Provider to API key environment variable mapping (全局变量)
+declare -Ar PROVIDER_API_KEYS=(
+    ["zai-cn"]="GLM_API_KEY"
+    ["moonshot"]="MOONSHOT_API_KEY"
+    ["minimax-cn"]="MINIMAX_API_KEY"
+    ["deepseek"]="DEEPSEEK_API_KEY"
+    ["ollama"]=""
+    ["openai"]="OPENAI_API_KEY"
+    ["anthropic"]="ANTHROPIC_API_KEY"
+    ["google"]="GEMINI_API_KEY"
+    ["openrouter"]="OPENROUTER_API_KEY"
+)
 
+# =============================================================================
+# Phase 3: Provider/Model Selection Functions (Level 1)
+# =============================================================================
 prompt_provider() {
     local current_provider="${1:-}"
     local choice
@@ -262,7 +278,7 @@ prompt_model() {
     local models="${PROVIDER_MODELS[$provider]:-}"
 
     if [[ -z $models ]]; then
-        echo "${current_model:-${PROVIDER_DEFAULTS[$provider]:-${DEFAULT_PROVIDER}}}"
+        echo "${current_model:-${PROVIDER_DEFAULTS[$provider]:-${DEFAULT_MODEL}}}"
         return
     fi
 
@@ -277,7 +293,7 @@ prompt_model() {
             default_marker=" (default)"
         fi
         echo "  $count) $model$default_marker" >&2
-        ((count++))
+        ((count += 1))
     done
 
     echo -n "Select model [1]: " >&2
@@ -317,9 +333,225 @@ prompt_gateway_port() {
 }
 
 # =============================================================================
-# Environment Setup Functions (SRP pattern)
+# Phase 4: Tailscale Core API Functions (Level 2)
 # =============================================================================
+get_tailscale_api_token() {
+    local cfg_file="$BUILD_DIR/tailscale.cfg"
+    local token=$(read_env_value "$cfg_file" "TAILSCALE_API_TOKEN" "")
+    echo "$token"
+}
 
+load_tailscale_api_token() {
+    local needs_prompt="true"
+    local tailscale_cfg_file="$BUILD_DIR/tailscale.cfg"
+    local tailscale_api_token=$(get_tailscale_api_token)
+
+    if [[ -n $tailscale_api_token ]]; then
+        local update_choice=1
+        local masked_api_token=$(mask_sensitive_key "$tailscale_api_token" 8 6 14)
+
+        echo "" >&2
+        echo "Detect Tailscale API Access Token:" >&2
+        echo "  $masked_api_token" >&2
+        echo "" >&2
+        echo "Select an option:" >&2
+        echo "  1) Skip Tailscale API Access Token update (default)" >&2
+        echo "  2) Force update Tailscale API Access Token" >&2
+        echo -n "Enter your choice [1]: " >&2
+        read -r update_choice
+        echo "" >&2
+
+        if [[ $update_choice != "2" ]]; then
+            print_info "Skipped Tailscale API Access Token update (using existing settings)."
+            echo "" >&2
+            needs_prompt="false"
+        fi
+    fi
+
+    if [[ $needs_prompt == "true" ]]; then
+        print_info "Setting up Tailscale API Access Token..."
+        print_info 'NOTE: Get from "https://login.tailscale.com/admin/settings/keys".'
+        tailscale_api_token=$(prompt_sensitive_input "Enter Tailscale API Access Token: ")
+
+        if [[ -z $tailscale_api_token ]]; then
+            print_error "Tailscale API Access Token required."
+            return 1
+        fi
+
+        umask 0077
+        update_env_file "$tailscale_cfg_file" "TAILSCALE_API_TOKEN" "$tailscale_api_token"
+        umask 0022
+
+        chmod 600 "$tailscale_cfg_file"
+
+        local masked_api_token=$(mask_sensitive_key "$tailscale_api_token" 8 6 14)
+        print_success "Tailscale API Access Token updated:"
+        print_success "     $masked_api_token"
+    fi
+
+    echo "$tailscale_api_token"
+}
+
+get_tailscale_devices() {
+    print_info "Getting Tailscale tailnet devices list..."
+
+    local tailscale_api_token="$1"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/tailnet/-/devices" \
+            -H "Authorization: Bearer $tailscale_api_token"
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Tailscale tailnet devices list failed (HTTP $status_code): $response_body"
+        echo ""
+    else
+        echo "$response_body"
+    fi
+}
+
+delete_tailscale_device() {
+    print_info "Deleting Tailscale tailnet device..."
+
+    local tailscale_api_token="$1" device_id="$2"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/device/$device_id" \
+            -X DELETE -H "Authorization: Bearer $tailscale_api_token" 2>&1
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Failed to remove Tailscale tailnet device $device_id (HTTP $status_code): $response_body"
+        return 1
+    fi
+
+    print_success "Tailscale tailnet device $device_id removed successfully"
+    return 0
+}
+
+get_tailscale_policy() {
+    local tailscale_api_token="$1"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/tailnet/-/acl" \
+            -H "Authorization: Bearer $tailscale_api_token"
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Getting Tailscale tailnet policy failed (HTTP $status_code): $response_body"
+        echo ""
+    else
+        echo "$response_body"
+    fi
+}
+
+set_tailscale_policy() {
+    local tailscale_api_token="$1"
+    local tailscale_tag_name="$2"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/tailnet/-/acl" \
+            -H "Authorization: Bearer $tailscale_api_token" \
+            -X POST -H 'Content-Type: application/json' \
+            -d "{
+                \"tagOwners\": {
+                    \"${tailscale_tag_name}\": [\"autogroup:admin\"]
+                }
+            }"
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Setting Tailscale tailnet policy failed (HTTP $status_code): $response_body"
+        return 1
+    fi
+
+    return 0
+}
+
+get_tailscale_dns_preferences() {
+    local tailscale_api_token="$1"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" 'https://api.tailscale.com/api/v2/tailnet/-/dns/preferences' \
+            --header "Authorization: Bearer $tailscale_api_token"
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Getting Tailscale dns preferences failed (HTTP $status_code): $response_body"
+        echo ""
+    else
+        echo "$response_body"
+    fi
+
+}
+
+set_tailscale_dns_preferences() {
+    local tailscale_api_token="$1"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" \
+            'https://api.tailscale.com/api/v2/tailnet/-/dns/preferences' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --header "Authorization: Bearer $tailscale_api_token" \
+            --data '{"magicDNS": true}'
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Setting Tailscale dns preferences failed (HTTP $status_code): $response_body"
+        return 1
+    fi
+
+    return 0
+}
+
+get_tailscale_tailnet_settings() {
+    local tailscale_api_token="$1"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" 'https://api.tailscale.com/api/v2/tailnet/-/settings' \
+            --header "Authorization: Bearer $tailscale_api_token"
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Getting Tailscale tailnet settings failed (HTTP $status_code): $response_body"
+        echo ""
+    else
+        echo "$response_body"
+    fi
+}
+
+set_tailscale_tailnet_settings() {
+    local tailscale_api_token="$1"
+    local raw_response=$(
+        curl -s -w "\n%{http_code}" \
+            'https://api.tailscale.com/api/v2/tailnet/-/settings' \
+            --request PATCH \
+            --header 'Content-Type: application/json' \
+            --header "Authorization: Bearer $tailscale_api_token" \
+            --data '{"httpsEnabled": true}'
+    )
+    local status_code=$(echo "$raw_response" | tail -n1)
+    local response_body=$(echo "$raw_response" | sed '$d')
+
+    if [[ $status_code != "200" ]]; then
+        print_error "Setting Tailscale tailnet settings failed (HTTP $status_code): $response_body"
+        return 1
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# Phase 5: Environment File Operation Functions (Level 2)
+# =============================================================================
 backup_env_file() {
     local env_file="$1"
     if [[ -f $env_file ]]; then
@@ -373,19 +605,9 @@ read_env_value() {
     fi
 }
 
-# Provider to API key environment variable mapping
-declare -A PROVIDER_API_KEYS=(
-    ["zai-cn"]="GLM_API_KEY"
-    ["moonshot"]="MOONSHOT_API_KEY"
-    ["minimax-cn"]="MINIMAX_API_KEY"
-    ["deepseek"]="DEEPSEEK_API_KEY"
-    ["ollama"]=""
-    ["openai"]="OPENAI_API_KEY"
-    ["anthropic"]="ANTHROPIC_API_KEY"
-    ["google"]="GEMINI_API_KEY"
-    ["openrouter"]="OPENROUTER_API_KEY"
-)
-
+# =============================================================================
+# Phase 6: Tailscale Advanced Setup Functions (Level 3)
+# =============================================================================
 copy_tailscale_env_file() {
     local tailscale_env_file="$1"
     local tailscale_env_example="$2"
@@ -456,100 +678,6 @@ setup_tailscale_env() {
         print_success "Tailscale Auth Key updated:"
         print_success "     $masked_auth_key"
     fi
-}
-
-get_tailscale_api_token() {
-    local cfg_file="$BUILD_DIR/tailscale.cfg"
-    local token=$(read_env_value "$cfg_file" "TAILSCALE_API_TOKEN" "")
-    echo "$token"
-}
-
-load_tailscale_api_token() {
-    local needs_prompt="true"
-    local tailscale_cfg_file="$BUILD_DIR/tailscale.cfg"
-    local tailscale_api_token=$(get_tailscale_api_token)
-
-    if [[ -n $tailscale_api_token ]]; then
-        local update_choice=1
-        local masked_api_token=$(mask_sensitive_key "$tailscale_api_token" 8 6 14)
-
-        echo "" >&2
-        echo "Detect Tailscale API Access Token:" >&2
-        echo "  $masked_api_token" >&2
-        echo "" >&2
-        echo "Select an option:" >&2
-        echo "  1) Skip Tailscale API Access Token update (default)" >&2
-        echo "  2) Force update Tailscale API Access Token" >&2
-        echo -n "Enter your choice [1]: " >&2
-        read -r update_choice
-        echo "" >&2
-
-        if [[ $update_choice != "2" ]]; then
-            print_info "Skipped Tailscale API Access Token update (using existing settings)."
-            echo "" >&2
-            needs_prompt="false"
-        fi
-    fi
-
-    if [[ $needs_prompt == "true" ]]; then
-        print_info "Setting up Tailscale API Access Token..."
-        print_info 'NOTE: Get from "https://login.tailscale.com/admin/settings/keys".'
-        tailscale_api_token=$(prompt_sensitive_input "Enter Tailscale API Access Token: ")
-
-        if [[ -z $tailscale_api_token ]]; then
-            print_error "Tailscale API Access Token required."
-            return 1
-        fi
-
-        umask 0077
-        update_env_file "$tailscale_cfg_file" "TAILSCALE_API_TOKEN" "$tailscale_api_token"
-        umask 0022
-
-        chmod 600 "$tailscale_cfg_file"
-
-        local masked_api_token=$(mask_sensitive_key "$tailscale_api_token" 8 6 14)
-        print_success "Tailscale API Access Token updated:"
-        print_success "     $masked_api_token"
-    fi
-
-    echo "$tailscale_api_token"
-}
-
-get_tailscale_dns_preferences() {
-    local tailscale_api_token="$1"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" 'https://api.tailscale.com/api/v2/tailnet/-/dns/preferences' \
-            --header "Authorization: Bearer $tailscale_api_token"
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Getting Tailscale dns preferences failed (HTTP $status_code): $response_body"
-        echo ""
-    else
-        echo "$response_body"
-    fi
-
-}
-
-set_tailscale_dns_preferences() {
-    local tailscale_api_token="$1"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" \
-            'https://api.tailscale.com/api/v2/tailnet/-/dns/preferences' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --header "Authorization: Bearer $tailscale_api_token" \
-            --data '{"magicDNS": true}'
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Setting Tailscale dns preferences failed (HTTP $status_code): $response_body"
-        return 1
-    fi
 
     return 0
 }
@@ -580,44 +708,6 @@ setup_tailscale_magicdns() {
     fi
 
     print_success "Tailscale MagicDNS enabled successfully"
-
-    return 0
-}
-
-get_tailscale_tailnet_settings() {
-    local tailscale_api_token="$1"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" 'https://api.tailscale.com/api/v2/tailnet/-/settings' \
-            --header "Authorization: Bearer $tailscale_api_token"
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Getting Tailscale tailnet settings failed (HTTP $status_code): $response_body"
-        echo ""
-    else
-        echo "$response_body"
-    fi
-}
-
-set_tailscale_tailnet_settings() {
-    local tailscale_api_token="$1"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" \
-            'https://api.tailscale.com/api/v2/tailnet/-/settings' \
-            --request PATCH \
-            --header 'Content-Type: application/json' \
-            --header "Authorization: Bearer $tailscale_api_token" \
-            --data '{"httpsEnabled": true}'
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Setting Tailscale tailnet settings failed (HTTP $status_code): $response_body"
-        return 1
-    fi
 
     return 0
 }
@@ -684,6 +774,113 @@ setup_tailscale_features() {
     return 0
 }
 
+setup_tailscale_policy() {
+    local tailscale_tag_name="$DEFAULT_TAILSCALE_TAG_NAME"
+    local tailscale_api_token=$(get_tailscale_api_token)
+
+    if [[ -z $tailscale_api_token ]]; then
+        print_error "No Tailscale API token available. Skipping Tailscale policy setup."
+        return 1
+    fi
+
+    local raw_json=$(get_tailscale_policy "$tailscale_api_token")
+
+    if [[ -z $raw_json ]]; then
+        print_error "Tailscale tailnet policy check encountered issues. Please check your API token and network settings."
+        return 1
+    fi
+
+    local policy_json=$(
+        echo "$raw_json" | python3 -c "
+import sys, re
+text = sys.stdin.read()
+text = re.sub(r'//.*', '', text)
+text = re.sub(r',\s*([\]}])', r'\1', text)
+print(text)" 2> /dev/null || echo "{}"
+    )
+    print_debug "Policy Json Preview:"
+    print_debug "$policy_json"
+
+    local need_update="true"
+
+    if echo "$policy_json" | jq -e ".tagOwners[\"$tailscale_tag_name\"] | select(. != null) | contains([\"autogroup:admin\"])" > /dev/null 2>&1; then
+        print_info "Tailscale tailnet policy already exists, skipping update..."
+        need_update="false"
+    fi
+
+    if [[ $need_update == "true" ]]; then
+        print_info "Setting up Tailscale tailnet policy for ZeroClaw..."
+        set_tailscale_policy "$tailscale_api_token" "$tailscale_tag_name" || return 1
+        print_success "Tailscale tailnet policy for ZeroClaw setup successfully"
+    fi
+
+    return 0
+}
+
+remove_tailscale_devices() {
+    local tailscale_api_token
+    # Separate 'local' from assignment to preserve the subshell exit code
+    tailscale_api_token=$(load_tailscale_api_token)
+
+    if [[ -z $tailscale_api_token ]]; then
+        print_error "No Tailscale API token available. Skipping Tailscale devices cleanup."
+        return 1
+    fi
+
+    local devices_json
+    devices_json=$(get_tailscale_devices "$tailscale_api_token")
+
+    if [[ -z $devices_json ]]; then
+        print_error "Tailscale tailnet devices list encountered issues. Please check your API token and network settings."
+        return 1
+    fi
+
+    local devices_preview
+    devices_preview=$(echo "$devices_json" |
+        jq -r '.devices[]? | {addresses, nodeId, hostname, connectedToControl}' 2> /dev/null ||
+        true)
+    print_debug "Device Json Preview:"
+    print_debug "$devices_preview"
+
+    local jq_output
+    jq_output=$(jq -r '.devices[]? | select(.hostname == "tailscale") | .nodeId' <<< "$devices_json")
+    print_debug "jq output for device IDs:"
+    print_debug "$jq_output"
+
+    local tailscale_ids=()
+    # '|| true' keeps pipefail from aborting when grep finds no matches (exit code 1)
+    mapfile -t tailscale_ids < <(grep -v '^$' <<< "$jq_output" || true)
+
+    local tailscale_count=${#tailscale_ids[@]}
+    print_debug "Tailscale tailnet device IDs: ${tailscale_ids[*]:-none}"
+    print_info "Tailscale tailnet devices count: $tailscale_count"
+
+    if [[ $tailscale_count -eq 0 ]]; then
+        print_info "No Tailscale tailnet device to clean."
+        return 0
+    fi
+
+    local removed_count=0 failed_count=0
+    for device_id in "${tailscale_ids[@]}"; do
+        print_info "Deleting Tailscale tailnet device: $device_id"
+        if delete_tailscale_device "$tailscale_api_token" "$device_id"; then
+            ((removed_count += 1))
+        else
+            print_error "Failed to delete device: $device_id"
+            ((failed_count += 1))
+        fi
+    done
+
+    print_success "$removed_count Tailscale tailnet device(s) removed successfully"
+
+    [[ $failed_count -eq 0 ]] || return 1
+
+    return 0
+}
+
+# =============================================================================
+# Phase 7: ZeroClaw Environment Functions (Level 4)
+# =============================================================================
 copy_zeroclaw_env_file() {
     local zeroclaw_env_file="$1"
     local zeroclaw_env_example="$2"
@@ -778,185 +975,29 @@ setup_zeroclaw_env() {
         print_success "     API Key: $masked_api_key"
         print_success "     Gateway Port: $gateway_port"
     fi
-}
-
-get_tailscale_devices() {
-    print_info "Getting Tailscale tailnet devices list..."
-
-    local tailscale_api_token="$1"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/tailnet/-/devices" \
-            -H "Authorization: Bearer $tailscale_api_token"
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Tailscale tailnet devices list failed (HTTP $status_code): $response_body"
-        echo ""
-    else
-        echo "$response_body"
-    fi
-}
-
-delete_tailscale_device() {
-    print_info "Deleting Tailscale tailnet device..."
-
-    local tailscale_api_token="$1" device_id="$2"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/device/$device_id" \
-            -X DELETE -H "Authorization: Bearer $tailscale_api_token" 2>&1
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Failed to remove Tailscale tailnet device $device_id (HTTP $status_code): $response_body"
-        return 1
-    fi
-
-    print_success "Tailscale tailnet device $device_id removed successfully"
-    return 0
-}
-
-remove_tailscale_devices() {
-    local tailscale_api_token
-    tailscale_api_token=$(load_tailscale_api_token)
-
-    if [[ -z $tailscale_api_token ]]; then
-        print_error "No Tailscale API token available. Skipping Tailscale devices cleanup."
-        return 1
-    fi
-
-    devices_json=$(get_tailscale_devices "$tailscale_api_token")
-
-    if [[ -z $devices_json ]]; then
-        print_error "Tailscale tailnet devices list encountered issues. Please check your API token and network settings."
-        return 1
-    fi
-
-    local devices_preview=$(echo "$devices_json" | jq -r '.devices[]? | {addresses, nodeId, hostname, connectedToControl}' 2> /dev/null || echo "{}")
-    print_debug "Device Json Preview:"
-    print_debug "$devices_preview"
-
-    local tailscale_ids
-    readarray -t tailscale_ids < <(echo "$devices_json" | jq -r '.devices[]? | select(.hostname == "tailscale") | .nodeId' 2> /dev/null)
-    print_debug "Tailscale tailnet devices Ids: ${tailscale_ids[*]:-none}"
-    local tailscale_count=${#tailscale_ids[@]}
-    print_info "Tailscale tailnet devices count: $tailscale_count"
-
-    if [[ $tailscale_count -gt 0 ]]; then
-        local removed_count=0
-        for device_id in "${tailscale_ids[@]}"; do
-            print_info "Deleting Tailscale tailnet device: $device_id"
-            if [[ -n $device_id ]]; then
-                delete_tailscale_device "$tailscale_api_token" "$device_id" && ((removed_count++))
-            fi
-        done
-        print_success "$removed_count Tailscale tailnet devices removed successfully"
-    else
-        print_info "No Tailscale tailnet device to clean."
-    fi
 
     return 0
 }
 
-get_tailscale_policy() {
-    local tailscale_api_token="$1"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/tailnet/-/acl" \
-            -H "Authorization: Bearer $tailscale_api_token"
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Getting Tailscale tailnet policy failed (HTTP $status_code): $response_body"
-        echo ""
-    else
-        echo "$response_body"
-    fi
-}
-
-set_tailscale_policy() {
-    local tailscale_api_token="$1"
-    local tailscale_tag_name="$2"
-    local raw_response=$(
-        curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/tailnet/-/acl" \
-            -H "Authorization: Bearer $tailscale_api_token" \
-            -X POST -H 'Content-Type: application/json' \
-            -d "{
-                \"tagOwners\": {
-                    \"${tailscale_tag_name}\": [\"autogroup:admin\"]
-                }
-            }"
-    )
-    local status_code=$(echo "$raw_response" | tail -n1)
-    local response_body=$(echo "$raw_response" | sed '$d')
-
-    if [[ $status_code != "200" ]]; then
-        print_error "Setting Tailscale tailnet policy failed (HTTP $status_code): $response_body"
-        return 1
-    fi
-
-    return 0
-}
-
-setup_tailscale_policy() {
-    local tailscale_tag_name="tag:tailscale"
-    local tailscale_api_token=$(get_tailscale_api_token)
-
-    if [[ -z $tailscale_api_token ]]; then
-        print_error "No Tailscale API token available. Skipping Tailscale policy setup."
-        return 1
-    fi
-
-    local raw_json=$(get_tailscale_policy "$tailscale_api_token")
-
-    if [[ -z $raw_json ]]; then
-        print_error "Tailscale tailnet policy check encountered issues. Please check your API token and network settings."
-        return 1
-    fi
-
-    local policy_json=$(
-        echo "$raw_json" | python3 -c "
-import sys, re
-text = sys.stdin.read()
-text = re.sub(r'//.*', '', text)
-text = re.sub(r',\s*([\]}])', r'\1', text)
-print(text)" 2> /dev/null || echo "{}"
-    )
-    print_debug "Policy Json Preview:"
-    print_debug "$policy_json"
-
-    local need_update="true"
-
-    if echo "$policy_json" | jq -e ".tagOwners[\"$tailscale_tag_name\"] | select(. != null) | contains([\"autogroup:admin\"])" > /dev/null 2>&1; then
-        print_info "Tailscale tailnet policy already exists, skipping update..."
-        need_update="false"
-    fi
-
-    if [[ $need_update == "true" ]]; then
-        print_info "Setting up Tailscale tailnet policy for ZeroClaw..."
-        set_tailscale_policy "$tailscale_api_token" "$tailscale_tag_name" || return 1
-        print_success "Tailscale tailnet policy for ZeroClaw setup successfully"
-    fi
-
-    return 0
-}
-
+# =============================================================================
+# Phase 8: Environment Control Functions (Level 5)
+# =============================================================================
 setup_environment() {
     print_info "Setting up environment settings for TailScale and ZeroClaw..."
 
-    local build_docker_dir="$BUILD_DIR/docker"
-    local tailscale_env_file="$build_docker_dir/tailscale/env/.env.tailscale"
-    local zeroclaw_env_file="$build_docker_dir/zeroclaw/env/.env.zeroclaw"
-    local tailscale_env_example="$DOCKER_DIR/tailscale/.env.tailscale.example"
-    local zeroclaw_env_example="$DOCKER_DIR/zeroclaw/.env.zeroclaw.example"
-    local provider model api_key gateway_port tailscale_auth_key
+    setup_tailscale_env
 
-    setup_tailscale_env "$tailscale_env_file" "$tailscale_env_example"
-    setup_zeroclaw_env "$zeroclaw_env_file" "$zeroclaw_env_example"
+    if [[ $? -ne 0 ]]; then
+        print_error "Tailscale env setup encountered issues. Please check your API token and network settings."
+        return 1
+    fi
+
+    setup_zeroclaw_env
+
+    if [[ $? -ne 0 ]]; then
+        print_error "ZeroClaw env setup encountered issues. Please check your API token and network settings."
+        return 1
+    fi
 
     remove_tailscale_devices
 
@@ -985,9 +1026,8 @@ setup_environment() {
 }
 
 # =============================================================================
-# Docker Operations (Single Responsibility)
+# Phase 9: Docker Basic Operations (Level 6)
 # =============================================================================
-
 check_docker_command() {
     print_info "Checking docker command availability..."
     validate_docker || return 1
@@ -1003,11 +1043,33 @@ cleanup_old() {
         print_error "Cannot change to docker directory" && return 1
     }
     $DOCKER_COMPOSE down || true
-    docker system prune -a -f || true
+
+    if [[ $DEBUG_MODE != "true" ]]; then
+        docker system prune -a -f > /dev/null 2>&1 || true
+    else
+        docker system prune -a -f || true
+    fi
 
     print_success "Cleanup completed"
 }
 
+setup_directories() {
+    print_info "Setting up build directories..."
+    for subdir in docker; do
+        validate_directory "$BUILD_DIR/$subdir" || return 1
+    done
+    # Zeroclaw subdirectory
+    validate_directory "$BUILD_DIR/docker/zeroclaw/env" || return 1
+    # Tailscale subdirectory
+    validate_directory "$BUILD_DIR/docker/tailscale/env" || return 1
+    print_success "Build directories created"
+
+    return 0
+}
+
+# =============================================================================
+# Phase 10: Docker Health Check Functions (Level 6)
+# =============================================================================
 tailscale_health_json() {
     if command -v jq > /dev/null 2>&1; then
         docker exec tailscale tailscale status --json 2> /dev/null |
@@ -1036,39 +1098,46 @@ json_get() {
 wait_tailscale_ready() {
     local max_retries=15 delay=2
     local retry=0 json ip logged_in error
+
     while ((retry < max_retries)); do
         json=$(tailscale_health_json)
         ip=$(json_get "$json" "ip")
         logged_in=$(json_get "$json" "loggedIn")
         error=$(json_get "$json" "error")
+
         if [[ -n $ip ]]; then
             print_success "Tailscale IP ready: $ip"
-            echo "$ip"
             return 0
         fi
+
         if [[ -n $error && $error != "no_jq" ]]; then
             print_error "Tailscale: $error"
             return 1
         fi
+
         print_info "Tailscale ready check $((retry + 1))/$max_retries (IP: ${ip:-pending})"
+
         sleep "$delay"
-        ((retry++))
+        ((retry += 1))
         delay=$((delay + 1))
     done
+
     print_error "Tailscale timeout (30s)"
+
     return 1
 }
 
-# Extract pairing code from ZeroClaw logs
 get_pairing_code() {
-    docker logs zeroclaw 2>&1 | grep -oP '(?<=X-Pairing-Code: )\d+' | tail -1 || echo ""
+    docker exec zeroclaw zeroclaw gateway get-paircode 2>&1 | grep -oP '(?<=X-Pairing-Code: )\d+' | tail -1 || echo ""
 }
 
-# Check if Tailscale is authenticated (returns IP if ready, empty if not)
 get_tailscale_ip() {
     json_get "$(tailscale_health_json)" "ip"
 }
 
+# =============================================================================
+# Phase 11: Docker Container Operations (Level 6)
+# =============================================================================
 start_container() {
     print_info "Starting Containers..."
 
@@ -1084,8 +1153,21 @@ start_container() {
     fi
 
     # Wait for Tailscale container to be ready
-    print_info "Waiting for Tailscale container to be ready..."
-    sleep 5
+    print_info "Waiting for Tailscale container to be ready (adaptive)..."
+    # Tailscale readiness poll - max 20s with exponential backoff
+    local ts_retries=0 ts_max=10 ts_delay=1 ts_elapsed=0
+    while ((ts_retries < ts_max)); do
+        if [[ -n $(get_tailscale_ip) ]]; then
+            print_success "Tailscale ready (${ts_elapsed}s)"
+            break
+        fi
+        print_info "Tailscale warmup $((ts_retries + 1))/$ts_max..."
+        sleep "$ts_delay"
+        ts_elapsed=$((ts_elapsed + ts_delay))
+        ((ts_retries += 1))
+        ((ts_delay = ts_delay < 4 ? ts_delay + 1 : 4))
+    done
+    [[ $ts_retries -ge $ts_max ]] && print_warning "Tailscale warmup slow, continuing..."
 
     # Professional Tailscale readiness check with timeout
     print_info "Ensuring Tailscale is ready - 30s timeout"
@@ -1122,22 +1204,41 @@ start_container() {
 
     print_success "Tailscale authenticated IP: $tailscale_ip"
 
-    # Now start zeroclaw
     print_info "Starting ZeroClaw container..."
-    if ! $DOCKER_COMPOSE up --build -d zeroclaw; then
-        print_error "Failed to start ZeroClaw container"
+
+    local docker_compose_args=("--build" "--detach")
+
+    if [[ $DEBUG_MODE != "true" ]]; then
+        docker_compose_args+=("--quiet-build")
+    fi
+
+    if ! ${DOCKER_COMPOSE} up "${docker_compose_args[@]}" zeroclaw; then
+        print_error "Failed to build and start ZeroClaw container"
         return 1
     fi
 
     print_success "Container started"
 
-    # Wait for ZeroClaw to initialize and generate logs
-    print_info "Waiting for ZeroClaw to initialize..."
-    sleep 10
+    # Wait for ZeroClaw pairing code - max 30s adaptive poll
+    print_info "Waiting for ZeroClaw initialization (adaptive)..."
 
-    # Get pairing code from logs
-    local pairing_code
-    pairing_code=$(get_pairing_code)
+    local zc_retries=0 zc_max=15 zc_delay=2 zc_elapsed=0 pairing_code=""
+
+    while ((zc_retries < zc_max)); do
+        pairing_code=$(get_pairing_code)
+        if [[ -n $pairing_code ]]; then
+            print_success "ZeroClaw ready - pairing code available (${zc_elapsed}s)"
+            break
+        fi
+        print_info "ZeroClaw init $((zc_retries + 1))/$zc_max..."
+        sleep "$zc_delay"
+        zc_elapsed=$((zc_elapsed + zc_delay))
+        ((zc_retries += 1))
+        ((zc_delay = zc_delay < 3 ? zc_delay + 1 : 3))
+    done
+    if [[ -z $pairing_code ]]; then
+        print_info "No new pairing code found in logs (device may already be paired)"
+    fi
 
     if [[ -n $pairing_code ]]; then
         echo ""
@@ -1162,9 +1263,8 @@ start_container() {
 }
 
 # =============================================================================
-# Command Functions (Command Pattern)
+# Phase 12: Command Functions (Level 7)
 # =============================================================================
-
 show_help() {
     print_header "ZeroClaw Build Script v$SCRIPT_VERSION"
     cat << EOF
@@ -1237,7 +1337,35 @@ do_distclean() {
     return 0
 }
 
-# Build and run pipeline (Pipeline pattern)
+do_logs() {
+    cd "$DOCKER_DIR" || {
+        print_error "Cannot change to docker directory" && return 1
+    }
+    $DOCKER_COMPOSE logs -f
+}
+
+do_status() {
+    cd "$DOCKER_DIR" || {
+        print_error "Cannot change to docker directory" && return 1
+    }
+    $DOCKER_COMPOSE ps -a
+}
+
+do_stop() {
+    cd "$DOCKER_DIR" || {
+        print_error "Cannot change to docker directory" && return 1
+    }
+    $DOCKER_COMPOSE down
+    print_success "Containers stopped"
+}
+
+do_restart() {
+    print_info "Restarting containers..."
+    do_stop || return 1
+    start_container || return 1
+    print_success "Containers restarted"
+}
+
 pipeline_build_and_run() {
     local -a steps=(
         "do_clean:Step 1: Cleaning previous build"
@@ -1269,53 +1397,9 @@ pipeline_build_and_run() {
     print_info "Run '$0 stop' to stop the container"
 }
 
-setup_directories() {
-    print_info "Setting up build directories..."
-    for subdir in docker; do
-        validate_directory "$BUILD_DIR/$subdir" || return 1
-    done
-    # Zeroclaw subdirectory
-    validate_directory "$BUILD_DIR/docker/zeroclaw/env" || return 1
-    # Tailscale subdirectory
-    validate_directory "$BUILD_DIR/docker/tailscale/env" || return 1
-    print_success "Build directories created"
-
-    return 0
-}
-
-do_logs() {
-    cd "$DOCKER_DIR" || {
-        print_error "Cannot change to docker directory" && return 1
-    }
-    $DOCKER_COMPOSE logs -f
-}
-
-do_status() {
-    cd "$DOCKER_DIR" || {
-        print_error "Cannot change to docker directory" && return 1
-    }
-    $DOCKER_COMPOSE ps -a
-}
-
-do_stop() {
-    cd "$DOCKER_DIR" || {
-        print_error "Cannot change to docker directory" && return 1
-    }
-    $DOCKER_COMPOSE down
-    print_success "Containers stopped"
-}
-
-do_restart() {
-    print_info "Restarting containers..."
-    do_stop || return 1
-    start_container || return 1
-    print_success "Containers restarted"
-}
-
 # =============================================================================
-# Main Entry Point (Router Pattern)
+# Phase 13: Main Entry Point (Level 8)
 # =============================================================================
-
 main() {
     local -a args=()
     local has_command="false"
