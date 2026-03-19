@@ -393,8 +393,6 @@ load_tailscale_api_token() {
 }
 
 get_tailscale_devices() {
-    print_info "Getting Tailscale tailnet devices list..."
-
     local tailscale_api_token="$1"
     local raw_response=$(
         curl -s -w "\n%{http_code}" "https://api.tailscale.com/api/v2/tailnet/-/devices" \
@@ -1095,6 +1093,36 @@ json_get() {
     echo "$json" | sed -n "s/.*\"$field\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n1 || echo ""
 }
 
+get_tailscale_domain() {
+    local tailscale_api_token=$(get_tailscale_api_token)
+
+    if [[ -z $tailscale_api_token ]]; then
+        print_error "No Tailscale API token available. Skipping Tailscale domain retrieval."
+        echo ""
+        return 1
+    fi
+
+    local devices_json
+    devices_json=$(get_tailscale_devices "$tailscale_api_token")
+
+    if [[ -z $devices_json ]]; then
+        print_error "Tailscale tailnet devices list encountered issues. Please check your API token and network settings."
+        echo ""
+        return 1
+    fi
+
+    local device_domain
+    device_domain=$(jq -r '.devices[]? | select(.hostname == "tailscale") | .name' <<< "$devices_json")
+
+    if [[ -n $device_domain ]]; then
+        echo "${device_domain}"
+    else
+        echo ""
+    fi
+
+    return 0
+}
+
 wait_tailscale_ready() {
     local max_retries=15 delay=2
     local retry=0 json ip logged_in error
@@ -1236,11 +1264,10 @@ start_container() {
         ((zc_retries += 1))
         ((zc_delay = zc_delay < 3 ? zc_delay + 1 : 3))
     done
+
     if [[ -z $pairing_code ]]; then
         print_info "No new pairing code found in logs (device may already be paired)"
-    fi
-
-    if [[ -n $pairing_code ]]; then
+    else
         echo ""
         print_header "ZeroClaw Pairing Required"
         echo ""
@@ -1248,12 +1275,21 @@ start_container() {
         echo ""
         echo "Please enter this code in the ZeroClaw web interface to pair your device."
         echo ""
+
         if [[ -n $tailscale_ip ]]; then
-            echo -e "Access ZeroClaw at: ${CYAN}http://${tailscale_ip}:42617${NC}"
+            echo "Access ZeroClaw at:"
+            echo -e "  ${GREEN}HTTP:${NC}  ${CYAN}http://${tailscale_ip}:42617${NC}"
         fi
+
+        local tailscale_domain=$(get_tailscale_domain)
+
+        if [[ -n $tailscale_domain ]]; then
+            echo -e "  ${GREEN}HTTP:${NC}  ${CYAN}http://${tailscale_domain}${NC}"
+            echo -e "  ${GREEN}HTTPS:${NC} ${CYAN}https://${tailscale_domain}${NC}"
+            echo ""
+        fi
+
         echo ""
-    else
-        print_info "No pairing code found in logs. Device may already be paired."
     fi
 
     print_info "Container status:"
@@ -1393,8 +1429,6 @@ pipeline_build_and_run() {
     print_success "========================================"
     print_success "  Build and Run Complete!"
     print_success "========================================"
-    print_info "Run '$0 logs' to view container logs"
-    print_info "Run '$0 stop' to stop the container"
 }
 
 # =============================================================================
