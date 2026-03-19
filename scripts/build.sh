@@ -219,7 +219,7 @@ validate_directory() {
 
 # Provider to API key environment variable mapping (全局变量)
 declare -Ar PROVIDER_API_KEYS=(
-    ["zai-cn"]="GLM_API_KEY"
+    ["zai-cn"]="ZAI_API_KEY"
     ["moonshot"]="MOONSHOT_API_KEY"
     ["minimax-cn"]="MINIMAX_API_KEY"
     ["deepseek"]="DEEPSEEK_API_KEY"
@@ -1128,7 +1128,7 @@ wait_tailscale_ready() {
 }
 
 get_pairing_code() {
-    docker exec zeroclaw zeroclaw gateway get-paircode 2>&1 | grep -oP '(?<=X-Pairing-Code: )\d+' | tail -1 || echo ""
+    docker exec zeroclaw zeroclaw gateway get-paircode --new 2>&1 | grep -oP '(?<=X-Pairing-Code: )\d+' | tail -1 || echo ""
 }
 
 get_tailscale_ip() {
