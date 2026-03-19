@@ -20,6 +20,7 @@ services:
     volumes:
       - ./tailscale/serve-config.json:/etc/tailscaled/serve-config.json:ro
       - tailscale-state:/var/lib/tailscale
+      - tailscale-certs:/var/lib/tailscale/certs
 
     ports:
       - "127.0.0.1:42617:42617"
@@ -79,7 +80,9 @@ services:
     env_file:
       - ../build/docker/zeroclaw/env/.env.zeroclaw
 
-    # Resource limits
+    volumes:
+      - zeroclaw-data:/zeroclaw-data
+
     deploy:
       resources:
         limits:
@@ -118,6 +121,8 @@ services:
 # =============================================================================
 volumes:
   tailscale-state:
+  tailscale-certs:
+  zeroclaw-data:
 
 networks:
   default:
