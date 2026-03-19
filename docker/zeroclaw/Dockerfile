@@ -33,7 +33,7 @@ RUN chmod 600 /zeroclaw-data/.zeroclaw/config.toml && \
     chown -R 65534:65534 /zeroclaw-data
 
 # Copy zeroclaw binary from original distroless image
-COPY --from=ghcr.io/zeroclaw-labs/zeroclaw:v0.1.7 /usr/local/bin/zeroclaw /usr/local/bin/zeroclaw
+COPY --from=ghcr.io/zeroclaw-labs/zeroclaw:latest /usr/local/bin/zeroclaw /usr/local/bin/zeroclaw
 
 # Set environment variables (inherited from original image)
 ENV PATH="/bin:/sbin:/usr/local/bin:\${PATH}" \
