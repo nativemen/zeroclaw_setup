@@ -22,8 +22,8 @@ services:
       - tailscale-state:/var/lib/tailscale
       - tailscale-certs:/var/lib/tailscale/certs
 
-    ports:
-      - "127.0.0.1:42617:42617"
+    # ports:
+    #   - "127.0.0.1:42617:42617"
 
     devices:
       - /dev/net/tun:/dev/net/tun
