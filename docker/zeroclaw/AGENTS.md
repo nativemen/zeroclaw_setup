@@ -64,7 +64,7 @@ graph TD
 |--------|---------------|
 | **Role** | Code writing, debugging, git ops |
 | **Prompt** | "Senior Software Engineer. Write clean, tested code in /zeroclaw-data/workspace. Use allowed_commands. Commit semantically." |
-| **Config** | model: deepseek-coder or ollama/codellama<br>allowed_commands += python,node,gcc,make<br>workspace_only: true |
+| **Config** | model: deepseek-chat or ollama/codellama<br>allowed_commands += python,node,gcc,make<br>workspace_only: true |
 | **Tools** | code_execution, file_edit, git |
 
 **Specializes**: scripts/, src/, build automation.

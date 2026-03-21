@@ -17,16 +17,17 @@ readonly CONFIG_DIR="$PROJECT_ROOT/config"
 
 # Configurable defaults
 readonly DEFAULT_GATEWAY_PORT="42617"
-readonly DEFAULT_PROVIDER="zai-cn"
-readonly DEFAULT_MODEL="glm-4.7"
+readonly DEFAULT_PROVIDER="zai"
+readonly DEFAULT_MODEL="glm-4.5-air"
 readonly DEFAULT_TAILSCALE_TAG_NAME="tag:tailscale"
 
 # Provider definitions (easily extensible)
 declare -Ar PROVIDER_MODELS=(
-    ["zai-cn"]="glm-4.7 glm-4.6 glm-5"
+    ["zai"]="glm-4.5-air glm-5-turbo glm-5 glm-4.7 glm-4.6v"
+    ["zai-cn"]="glm-4.5-air glm-5-turbo glm-5 glm-4.7 glm-4.6v"
     ["moonshot"]="kimi-k2.5 kimi-k2-thinking kimi-k2-thinking-turbo"
-    ["minimax-cn"]="minimax-m2.5 minimax-m2.1 minimax-m2"
-    ["deepseek"]="deepseek-chat deepseek-coder deepseek-reasoner"
+    ["minimax"]="minimax-m2.5 minimax-m2.1 minimax-m2"
+    ["deepseek"]="deepseek-chat deepseek-reasoner"
     ["ollama"]="llama3 mistral codellama"
     ["openai"]="gpt-4o gpt-4o-mini gpt-4-turbo"
     ["anthropic"]="claude-sonnet-4-20250514 claude-opus-4-20250514 claude-3-5-haiku-20241022"
@@ -35,9 +36,10 @@ declare -Ar PROVIDER_MODELS=(
 )
 
 declare -Ar PROVIDER_DEFAULTS=(
-    ["zai-cn"]="glm-4.7"
+    ["zai"]="glm-4.5-air"
+    ["zai-cn"]="glm-4.5-air"
     ["moonshot"]="kimi-k2.5"
-    ["minimax-cn"]="minimax-m2.5"
+    ["minimax"]="minimax-m2.5"
     ["deepseek"]="deepseek-chat"
     ["ollama"]="llama3"
     ["openai"]="gpt-4o"
@@ -219,9 +221,10 @@ validate_directory() {
 
 # Provider to API key environment variable mapping (全局变量)
 declare -Ar PROVIDER_API_KEYS=(
+    ["zai"]="ZAI_API_KEY"
     ["zai-cn"]="ZAI_API_KEY"
     ["moonshot"]="MOONSHOT_API_KEY"
-    ["minimax-cn"]="MINIMAX_API_KEY"
+    ["minimax"]="MINIMAX_API_KEY"
     ["deepseek"]="DEEPSEEK_API_KEY"
     ["ollama"]=""
     ["openai"]="OPENAI_API_KEY"
@@ -239,15 +242,16 @@ prompt_provider() {
 
     echo "" >&2
     echo "Available providers:" >&2
-    echo "  1) zai-cn (default)" >&2
-    echo "  2) moonshot" >&2
-    echo "  3) minimax-cn" >&2
-    echo "  4) deepseek" >&2
-    echo "  5) ollama" >&2
-    echo "  6) openai" >&2
-    echo "  7) anthropic" >&2
-    echo "  8) google" >&2
-    echo "  9) openrouter" >&2
+    echo "  1) zai (default)" >&2
+    echo "  2) zai-cn" >&2
+    echo "  3) moonshot" >&2
+    echo "  4) minimax" >&2
+    echo "  5) deepseek" >&2
+    echo "  6) ollama" >&2
+    echo "  7) openai" >&2
+    echo "  8) anthropic" >&2
+    echo "  9) google" >&2
+    echo " 10) openrouter" >&2
 
     if [[ -n $current_provider ]]; then
         echo -n "Select provider [${current_provider}]: " >&2
@@ -257,15 +261,16 @@ prompt_provider() {
     read -r choice
 
     case "$choice" in
-        1) echo "zai-cn" ;;
-        2) echo "moonshot" ;;
-        3) echo "minimax-cn" ;;
-        4) echo "deepseek" ;;
-        5) echo "ollama" ;;
-        6) echo "openai" ;;
-        7) echo "anthropic" ;;
-        8) echo "google" ;;
-        9) echo "openrouter" ;;
+        1) echo "zai" ;;
+        2) echo "zai-cn" ;;
+        3) echo "moonshot" ;;
+        4) echo "minimax" ;;
+        5) echo "deepseek" ;;
+        6) echo "ollama" ;;
+        7) echo "openai" ;;
+        8) echo "anthropic" ;;
+        9) echo "google" ;;
+        10) echo "openrouter" ;;
         *) echo "${current_provider:-${DEFAULT_PROVIDER}}" ;;
     esac
 }
@@ -946,9 +951,9 @@ setup_zeroclaw_env() {
         print_info "Setting up ZeroClaw AI Model Settings..."
 
         provider=$(prompt_provider)
-        model=$(prompt_model "$provider" "$DEFAULT_MODEL")
-        api_key=$(prompt_sensitive_input "Enter your LLM API key: ")
-        gateway_port=$(prompt_gateway_port "${existing_gateway_port:-$DEFAULT_GATEWAY_PORT}")
+        local model=$(prompt_model "$provider" "$DEFAULT_MODEL")
+        local api_key=$(prompt_sensitive_input "Enter your LLM API key: ")
+        local gateway_port=$(prompt_gateway_port "${existing_gateway_port:-$DEFAULT_GATEWAY_PORT}")
 
         umask 0077
 

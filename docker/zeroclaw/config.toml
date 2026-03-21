@@ -8,22 +8,22 @@
 # Type: string. Default: "".
 # Recommended: "" (inject via env ZEROCLAW_API_KEY in docker-compose.yml for security/secret mgmt).
 # Reason: Avoids committing keys; Docker secrets best practice.
-# Usage: Mandatory for non-local providers like zai-cn/moonshot.
+# Usage: Mandatory for non-local providers like zai/zai-cn.
 api_key = ""
 
 # default_provider: Default LLM provider for Zeroclaw requests.
-# Type: string. Options: "zai-cn", "moonshot", "minimax", "deepseek", "ollama" (local), "openai", "anthropic", "google", "openrouter".
-# Recommended: "zai-cn" (fast CN access, cost-effective for general use).
+# Type: string. Options: "zai", "zai-cn", "moonshot", "minimax", "deepseek", "ollama" (local), "openai", "anthropic", "google", "openrouter".
+# Recommended: "zai" (fast CN access, cost-effective for general use).
 # Reason: Reliable default; fallback to ollama for offline/Docker.
 # Usage: Global fallback.
-default_provider = "zai-cn"
+default_provider = "zai"
 
 # default_model: Specific model within default_provider.
-# Type: string. Options: Provider-dependent (e.g., "glm-4.7", "glm-5" for zai-cn).
-# Recommended: "glm-4.7" (balanced intelligence/speed/cost).
+# Type: string. Options: Provider-dependent (e.g., "glm-5-turbo", "glm-5", "glm-4.7", "glm-4.6v", "glm-4.5-air" for zai).
+# Recommended: "glm-4.5-air".
 # Reason: Optimal for Zeroclaw autonomy tasks.
 # Usage: Override per-task if needed.
-default_model = "glm-4.7"
+default_model = "glm-4.5-air"
 
 # default_temperature: Controls creativity/randomness in LLM generation.
 # Type: float. Range: 0.0 (deterministic) - 2.0 (highly random). Default: 0.4.
@@ -32,7 +32,6 @@ default_model = "glm-4.7"
 # Usage: Adjust lower for analysis, higher for brainstorming.
 default_temperature = 0.4
 embedding_routes = []
-model_routes = []
 provider_timeout_secs = 120
 
 [model_providers]
@@ -40,9 +39,9 @@ provider_timeout_secs = 120
 [extra_headers]
 
 [observability]
-backend = "none"
+backend = "log"
 runtime_trace_max_entries = 200
-runtime_trace_mode = "none"
+runtime_trace_mode = "full"
 runtime_trace_path = "state/runtime-trace.jsonl"
 
 [autonomy]
@@ -74,19 +73,13 @@ allowed_commands = [
   "cp",
   "mv",
   "curl",
+  "zeroclaw",
 ]
 
 # forbidden_paths: Banned paths even in workspace.
 # Type: array[string].
 # Usage: Extra security layer.
-forbidden_paths = [
-  "/etc",
-  "/root",
-  "/proc",
-  "/sys",
-  "~/.ssh",
-  "/var/run",
-]
+forbidden_paths = ["/etc", "/root", "/proc", "/sys", "~/.ssh", "/var/run"]
 
 # max_actions_per_hour: Autonomy action rate limit (actions/hour).
 # Type: integer. Default: 100. Range: 50-500.
@@ -106,10 +99,7 @@ block_high_risk_commands = false
 
 allowed_roots = []
 always_ask = []
-auto_approve = [
-  "file_read",
-  "memory_recall",
-]
+auto_approve = ["file_read", "memory_recall"]
 non_cli_excluded_tools = []
 shell_env_passthrough = []
 
@@ -191,12 +181,7 @@ compress = true
 destination_dir = "state/backups"
 enabled = true
 encrypt = false
-include_dirs = [
-  "config",
-  "memory",
-  "audit",
-  "knowledge",
-]
+include_dirs = ["config", "memory", "audit", "knowledge"]
 max_keep = 10
 
 [data_retention]
@@ -210,11 +195,7 @@ cost_threshold_monthly_usd = 100.0
 default_cloud = "aws"
 enabled = false
 iac_tools = ["terraform"]
-supported_clouds = [
-  "aws",
-  "azure",
-  "gcp",
-]
+supported_clouds = ["aws", "azure", "gcp"]
 well_architected_frameworks = ["aws-waf"]
 
 [security_ops]
@@ -227,6 +208,7 @@ require_approval_for_actions = true
 
 [runtime]
 kind = "native"
+reasoning_enabled = false
 
 [runtime.docker]
 allowed_workspace_roots = []
@@ -280,7 +262,7 @@ max_tasks = 64
 # Recommended: 8 (efficient).
 # Reason: Prevents infinite loops; sufficient for complex tasks.
 # Usage: Higher for deep workflows.
-compact_context = false
+compact_context = true
 max_context_tokens = 32000
 max_history_messages = 50
 max_tool_iterations = 10
@@ -298,6 +280,111 @@ enabled = false
 max_skills = 500
 similarity_threshold = 0.85
 
+[[model_routes]]
+hint = "glm-5-turbo"
+model = "glm-5-turbo"
+provider = "zai"
+
+[[model_routes]]
+hint = "glm-5"
+model = "glm-5"
+provider = "zai"
+
+[[model_routes]]
+hint = "glm-4.7"
+model = "glm-4.7"
+provider = "zai"
+
+[[model_routes]]
+hint = "glm-4.6v"
+model = "glm-4.6v"
+provider = "zai"
+
+[[model_routes]]
+hint = "glm-4.5-air"
+model = "glm-4.5-air"
+provider = "zai"
+
+[[model_routes]]
+hint = "glm-5-turbo"
+model = "glm-5-turbo"
+provider = "zai-cn"
+
+[[model_routes]]
+hint = "glm-5"
+model = "glm-5"
+provider = "zai-cn"
+
+[[model_routes]]
+hint = "glm-4.7"
+model = "glm-4.7"
+provider = "zai-cn"
+
+[[model_routes]]
+hint = "glm-4.6v"
+model = "glm-4.6v"
+provider = "zai-cn"
+
+[[model_routes]]
+hint = "glm-4.5-air"
+model = "glm-4.5-air"
+provider = "zai-cn"
+
+[[model_routes]]
+hint = "kimi-k2.5"
+model = "kimi-k2.5"
+provider = "moonshot"
+
+[[model_routes]]
+hint = "kimi-k2-thinking"
+model = "kimi-k2-thinking"
+provider = "moonshot"
+
+[[model_routes]]
+hint = "kimi-k2-thinking-turbo"
+model = "kimi-k2-thinking-turbo"
+provider = "moonshot"
+
+[[model_routes]]
+hint = "minimax-m2.5"
+model = "minimax-m2.5"
+provider = "minimax"
+
+[[model_routes]]
+hint = "minimax-m2.1"
+model = "minimax-m2.1"
+provider = "minimax"
+
+[[model_routes]]
+hint = "minimax-m2"
+model = "minimax-m2"
+provider = "minimax"
+
+[[model_routes]]
+hint = "deepseek-chat"
+model = "deepseek-chat"
+provider = "deepseek"
+
+[[model_routes]]
+hint = "deepseek-reasoner"
+model = "deepseek-reasoner"
+provider = "deepseek"
+
+[[model_routes]]
+hint = "gemini-2.5-flash"
+model = "gemini-2.5-flash"
+provider = "google"
+
+[[model_routes]]
+hint = "gemini-2.0-flash"
+model = "gemini-2.0-flash"
+provider = "google"
+
+[[model_routes]]
+hint = "gemini-1.5-flash"
+model = "gemini-1.5-flash"
+provider = "google"
+
 [query_classification]
 enabled = false
 rules = []
@@ -305,7 +392,7 @@ rules = []
 [heartbeat]
 adaptive = true
 deadman_timeout_minutes = 0
-enabled = true
+enabled = false
 interval_minutes = 5
 max_interval_minutes = 120
 max_run_history = 100
@@ -416,7 +503,7 @@ require_pairing = true
 allow_public_bind = true
 idempotency_max_keys = 10000
 idempotency_ttl_secs = 300
-pair_rate_limit_per_minute = 10
+pair_rate_limit_per_minute = 60
 paired_tokens = []
 rate_limit_max_keys = 10000
 session_persistence = true
@@ -446,7 +533,7 @@ encrypt = true
 
 [browser]
 allowed_domains = ["*"]
-backend = "agent_browser"
+backend = "auto"
 enabled = true
 native_headless = true
 native_webdriver_url = "http://127.0.0.1:9515"
@@ -532,13 +619,49 @@ services = []
 format = "openclaw"
 
 [cost]
-allow_override = false
+allow_override = true
 daily_limit_usd = 10.0
 enabled = true
 monthly_limit_usd = 100.0
 warn_at_percent = 80
 
+[cost.prices."zai/glm-5-turbo"]
+input = 1.2
+output = 4.0
+
+[cost.prices."zai/glm-5"]
+input = 1.2
+output = 4.0
+
+[cost.prices."zai/glm-4.7"]
+input = 0.6
+output = 2.2
+
+[cost.prices."zai/glm-4.6v"]
+input = 0.6
+output = 2.2
+
+[cost.prices."zai/glm-4.5-air"]
+input = 0.6
+output = 2.2
+
+[cost.prices."zai-cn/glm-5-turbo"]
+input = 1.0
+output = 3.71
+
+[cost.prices."zai-cn/glm-5"]
+input = 1.0
+output = 3.71
+
 [cost.prices."zai-cn/glm-4.7"]
+input = 0.57
+output = 2.29
+
+[cost.prices."zai-cn/glm-4.6v"]
+input = 0.6
+output = 2.2
+
+[cost.prices."zai-cn/glm-4.5-air"]
 input = 0.6
 output = 2.2
 
@@ -583,6 +706,28 @@ boards = []
 enabled = false
 
 [agents]
+[agents.researcher]
+agentic = true
+agentic_timeout_secs = 600
+allowed_tools = ["web_search", "http_request", "file_read"]
+max_depth = 2
+max_iterations = 8
+model = "zai/glm-4.6v"
+provider = "zai"
+system_prompt = "You are a research assistant."
+
+[agents.coder]
+model = "zai/glm-4.5-air"
+provider = "zai"
+temperature = 0.2
+timeout_secs = 60
+
+[agents.code_reviewer]
+agentic = true
+allowed_tools = ["file_read", "shell"]
+model = "deepseek-chat"
+provider = "deepseek"
+system_prompt = "You are an expert code reviewer focused on security and performance."
 
 [swarms]
 
@@ -629,8 +774,8 @@ enabled = false
 max_nodes = 16
 
 [workspace]
-cross_workspace_search = false
-enabled = false
+cross_workspace_search = true
+enabled = true
 isolate_audit = true
 isolate_memory = true
 isolate_secrets = true
@@ -680,12 +825,7 @@ topics = []
 card_accent_color = "#0A66C2"
 enabled = false
 fallback_card = true
-providers = [
-  "stability",
-  "imagen",
-  "dalle",
-  "flux",
-]
+providers = ["stability", "imagen", "dalle", "flux"]
 temp_dir = "linkedin/images"
 
 [linkedin.image.stability]
