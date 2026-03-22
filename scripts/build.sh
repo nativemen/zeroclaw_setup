@@ -19,7 +19,8 @@ readonly CONFIG_DIR="$PROJECT_ROOT/config"
 readonly DEFAULT_GATEWAY_PORT="42617"
 readonly DEFAULT_PROVIDER="zai"
 readonly DEFAULT_MODEL="glm-4.5-air"
-readonly DEFAULT_TAILSCALE_TAG_NAME="tag:tailscale"
+readonly DEFAULT_HOSTNAME="zeroclaw"
+readonly DEFAULT_TAILSCALE_TAG_NAME="tag:$DEFAULT_HOSTNAME"
 
 # Provider definitions (easily extensible)
 declare -Ar PROVIDER_MODELS=(
@@ -1117,7 +1118,7 @@ get_tailscale_domain() {
     fi
 
     local device_domain
-    device_domain=$(jq -r '.devices[]? | select(.hostname == "tailscale") | .name' <<< "$devices_json")
+    device_domain=$(jq -r ".devices[]? | select(.hostname == \"$DEFAULT_HOSTNAME\") | .name" <<< "$devices_json")
 
     if [[ -n $device_domain ]]; then
         echo "${device_domain}"
