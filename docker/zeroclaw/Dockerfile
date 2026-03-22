@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM debian:bookworm-slim
 
 RUN apt-get update && \
     apt-get install -y \
@@ -34,7 +34,7 @@ RUN chmod 600 /zeroclaw-data/.zeroclaw/config.toml && \
     chown -R 65534:65534 /zeroclaw-data
 
 # Copy zeroclaw binary from original distroless image
-COPY --from=ghcr.io/zeroclaw-labs/zeroclaw:latest /usr/local/bin/zeroclaw /usr/local/bin/zeroclaw
+COPY --from=ghcr.io/zeroclaw-labs/zeroclaw:v0.5.6-beta.526-debian /usr/local/bin/zeroclaw /usr/local/bin/zeroclaw
 
 RUN /usr/local/bin/zeroclaw completions bash > /etc/bash_completion.d/zeroclaw
 RUN sed -i 's/^#\(if\|  if\|  elif\|    \. \|  fi\|fi\)/\1/' /etc/bash.bashrc
@@ -43,8 +43,7 @@ RUN sed -i 's/^#\(if\|  if\|  elif\|    \. \|  fi\|fi\)/\1/' /etc/bash.bashrc
 ENV PATH="/bin:/sbin:/usr/local/bin:\${PATH}" \
     SHELL=/bin/bash \
     HOME=/zeroclaw-data \
-    ZEROCLAW_WORKSPACE=/zeroclaw-data/workspace \
-    ZEROCLAW_GATEWAY_PORT=42617
+    LANG=C.UTF-8
 
 # Match original image configuration
 WORKDIR /zeroclaw-data

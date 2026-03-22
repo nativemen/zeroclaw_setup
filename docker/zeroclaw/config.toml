@@ -276,8 +276,8 @@ open_skills_enabled = false
 prompt_injection_mode = "full"
 
 [skills.skill_creation]
-enabled = false
-max_skills = 500
+enabled = true
+max_skills = 20
 similarity_threshold = 0.85
 
 [[model_routes]]
