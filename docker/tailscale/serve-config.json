@@ -11,7 +11,7 @@
         "${TS_CERT_DOMAIN}:80": {
             "Handlers": {
                 "/": {
-                    "Proxy": "http://127.0.0.1:42617"
+                    "Redirect": "https://${TS_CERT_DOMAIN}/"
                 }
             }
         },
